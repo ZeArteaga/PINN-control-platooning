@@ -8,7 +8,7 @@ from controller import setupDMPC, setupSim
 from plotting import setup_graphics
 
 class FV:
-     def __init__(self, fv_initial: np.array, mpc: MPC, sim: Simulator):
+     def __init__(self, fv_initial: np.ndarray, mpc: MPC, sim: Simulator):
         self.state = fv_initial
         self.mpc = mpc
         self.sim = sim
