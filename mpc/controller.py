@@ -47,7 +47,7 @@ def setupDMPC(model: Model, config: dict, get_prec_state) -> MPC:
     
     def tvp_fun(t_now): #create time varying parameter fetch function
         x_prec, v_prec = get_prec_state(t_now) #*get preceeding vehicle state...
-        print(f"  What mpc has called: {x_prec}, {v_prec}")
+        #print(f"  What mpc has called: {x_prec}, {v_prec}")
         for k in range(mpc.settings.n_horizon+1):
                 dt = mpc.settings.t_step
                 t_pred = t_now + k * dt 
@@ -68,7 +68,7 @@ def setupSim(model: Model, t_step, get_prec_state) -> Simulator:
     
     def tvp_fun(t_now): #create time varying parameter fetch function
         x_prec, v_prec = get_prec_state(t_now) #*get preceeding vehicle state...
-        print(f"  What sim has called: {x_prec}, {v_prec}")
+        #print(f"  What sim has called: {x_prec}, {v_prec}")
         tvp_template['t'] = t_now 
         tvp_template['x_prec'] = x_prec #*though this time no prediction is made since this sim model (plant)
         tvp_template['v_prec'] = v_prec

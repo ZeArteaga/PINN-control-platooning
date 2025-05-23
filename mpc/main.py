@@ -27,7 +27,7 @@ if __name__ == "__main__":
     d_min = 2
     L_prec = 4.5 #same len for every CAV
     dt = 0.1
-    t_end = 30
+    t_end = 1
     noise_std = 0 #TODO
     t_samp = np.array([0, 5, 10, 15, 25, t_end]) #time check points
     t = np.arange(start=t_samp[0], stop=t_end+dt, step=dt) #end at t_end seconds
@@ -73,10 +73,10 @@ if __name__ == "__main__":
 
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
-    pinn_model = SecondOrderIdeal(model_params) #!DEBUG -> using same ideal model for both to fix controller issues
+    mpc_model = SecondOrderPINNmodel("../models/onnx/pinn_c0_c1.onnx", model_params) #!DEBUG -> using same ideal model for both to fix controller issues
     plant_model = SecondOrderIdeal(model_params)
-    print("Pinn model control input and states:", pinn_model.u.keys(), pinn_model.x.keys())
-    print("Pinn model time varying parameters (provided):", pinn_model.tvp.keys())
+    print("Pinn model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
+    print("Pinn model time varying parameters (provided):", mpc_model.tvp.keys())
 
     platoon = []
     for i in range(0, platoon_size):
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         else:
             #! not implemented
             raise NotImplementedError("MPC setup for followers beyond the leader is not implemented yet.")
-        mpc = setupDMPC(pinn_model, mpc_config, fn_get_prec)
+        mpc = setupDMPC(mpc_model, mpc_config, fn_get_prec)
         print("\n", mpc.settings)
         sim = setupSim(plant_model, t_step=dt, get_prec_state=fn_get_prec)
         platoon.append(FV(fv_initials[i], mpc, sim)) #create follower and add to platoon
@@ -105,7 +105,7 @@ if __name__ == "__main__":
     for i, t_value in enumerate(t):
         u = fv0.mpc.make_step(fv0.state)
         #!DEBUG
-        print(f"DEBUG: MPC state at t={t_value:.1f}")
+        """ print(f"DEBUG: MPC state at t={t_value:.1f}")
         mpc_x = fv0.mpc.data['_x', 'x'][-1]
         mpc_x_prec = fv0.mpc.data['_tvp', 'x_prec'][-1]
         mpc_v = fv0.mpc.data['_x', 'v'][-1]
@@ -117,7 +117,7 @@ if __name__ == "__main__":
         print(f"  Preceeding position (x_prec): {mpc_x_prec}")
         print(f"  Preceeding position (v_prec): {mpc_v_prec}")
         print(f"  Calculated gap: {mpc_x_prec - mpc_x - L_prec}", f"using {fv0.mpc.model.aux['d']}")
-        print(f"  Actual gap (d): {mpc_gap}")
+        print(f"  Actual gap (d): {mpc_gap}") """
 
         #* Have to do update of tvp before calling sim,
         #* for some reason simulator does all calculation before updating tvp, except for t=0 obv.
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
         fv0.state = fv0.sim.make_step(u)
         #!DEBUG
-        print(f"DEBUG: Simulator state at t={t_value:.1f}")
+        """ print(f"DEBUG: Simulator state at t={t_value:.1f}")
         sim_x = fv0.sim.data['_x', 'x'][-1]
         sim_x_prec = fv0.sim.data['_tvp', 'x_prec'][-1]
         sim_v = fv0.sim.data['_x', 'v'][-1]
@@ -142,14 +142,12 @@ if __name__ == "__main__":
         print(f"  Preceeding position (x_prec): {sim_x_prec}")
         print(f"  Preceeding position (v_prec): {sim_v_prec}")
         print(f"  Calculated gap: {sim_x_prec - sim_x - L_prec}", f"using {fv0.sim.model.aux['d']}")
-        print(f"  Actual gap (d): {sim_gap}\n")
+        print(f"  Actual gap (d): {sim_gap}\n") """
     
     save_results([fv0.mpc, fv0.sim], overwrite=True)
 
     fv0.mpc_graphics.plot_predictions(t_ind=0) #Additionally exemplify predictions
-    fv0.mpc_graphics.plot_results()
-
     fv0.sim_graphics.plot_results()
-    fv0.mpc_graphics.reset_axes()
+    fv0.sim_graphics.reset_axes()
 
     plt.show()
