@@ -27,6 +27,7 @@ def save_trajectory_plot(data: dict, path: str, traj_id: str) -> pd.DataFrame:
 
     #Follower and Leader Position
     axs[0,0].plot(df['t'], df['fv0_x'], label='Follower Position (m)')
+    axs[0,1].plot(df['t'], df['fv0_v_kmh'], label='Follower Velocity (km/h)')
     axs[0,0].plot(df['t'], df['lv_x'], label='Leader Position (m)')
     axs[0,0].set_title("Vehicle Positions")
     axs[0,0].set_xlabel("Time (s)")
@@ -35,7 +36,6 @@ def save_trajectory_plot(data: dict, path: str, traj_id: str) -> pd.DataFrame:
     axs[0,0].grid(True)
 
     #Follower and Leader Velocity
-    axs[0,1].plot(df['t'], df['fv0_v_kmh'], label='Follower Velocity (km/h)')
     axs[0,1].plot(df['t'], df['lv_v'] * 3.6, label='Leader Velocity (km/h)') # Convert m/s to km/h for leader
     axs[0,1].set_title("Vehicle Velocities")
     axs[0,1].set_xlabel("Time (s)")

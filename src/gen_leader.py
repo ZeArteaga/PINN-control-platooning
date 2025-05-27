@@ -19,14 +19,16 @@ def vehicle_int(t, y, a_target_fn, params: dict):
 if __name__ == "__main__":
     dt = SIM_PARAMS["dt"]
 
-    t_samp = np.linspace(0, t_end, 10, dtype=np.float32)
+    t_end = 30 #30 second
+    X0 = (0,0)
 
+    t_samp = np.linspace(0, t_end, 10, dtype=np.float32)
     #DEFINE U PROFILES
     target_profiles = []
     target_profiles.append(np.full_like(t_samp, 0, dtype=np.float32)) #crusing
     target_profiles.append(np.array([5, 5, 5, 5, 5, 5, -2, -2, 1, 1], dtype=np.float32)) #emerg braking
-    target_profiles.append(np.array([2, 8, 0, 0, 1, 1, 0.7, 0.7, 0.7, 0.7], dtype=np.float32)) #accelerating
-    target_profiles.append(np.array([0.5, 0.1]*5, dtype=np.float32)) #stop&go/oscillating
+    target_profiles.append(np.array([3, 1, 1, 1, 1, 1, 0.7, 0.7, 0, 0], dtype=np.float32)) #accelerating
+    target_profiles.append(np.array([0.5, -0.5]*5, dtype=np.float32)) #stop&go/oscillating
     np.random.seed(31)
     target_profiles.append(np.random.uniform(low=-0.1, high=0.6, size=t_samp.shape).astype(np.float32)) #random
 
@@ -35,7 +37,7 @@ if __name__ == "__main__":
         input_interp.append(interp1d(t_samp, profile, kind='quadratic'))
 
     for id, a_target in enumerate(input_interp):
-        ret = solve_ivp(vehicle_int, t_span=t_span, y0=SIM_PARAMS["X0"],
+        ret = solve_ivp(vehicle_int, t_span=(0, t_end), y0=X0,
             t_eval=np.arange(0, t_end+dt, dt), args=(a_target,PHYSICS_PARAMS)) # evalute and store at regular dt intervals, RK45 is default
         print(f"[Trajectory {id}] {ret.message}")
         a_eff = np.clip(a_target(ret.t), PHYSICS_PARAMS["a_min"], PHYSICS_PARAMS["a_max"])
@@ -51,6 +53,6 @@ if __name__ == "__main__":
             'a': a_eff #output acceleration
         }
 
-        save_trajectory_plot(data, path=f"../data/leader_profile_{id}.csv")
+        save_trajectory_plot(data, path=f"../data/leader_profile_{id}.csv", traj_id=id, follower=False)
 
         
