@@ -70,6 +70,7 @@ if __name__ == "__main__":
     d_sim = lv_x_sim - fvo_x_sim
     d_target_sim = SIM_PARAMS["d_min"] + SIM_PARAMS["h"]*fv0_v_sim
     u = calc_req_input_from_acc(ret.y[1,:], a_eff, PHYSICS_PARAMS)
+
     data = {
         't': ret.t,
         'fv0_x': fvo_x_sim,
@@ -79,8 +80,8 @@ if __name__ == "__main__":
         'fv0_a': a_eff, #output acceleration
         'lv_x': lv_x_sim,
         'lv_v': lv_v_sim,
-        'd': d_sim,
-        'd_target': d_target_sim
+        'd_fv0_lv': d_sim,
+        'd*_fv0_lv': d_target_sim,
     }
 
     save_trajectory_plot(data, f"../data/CACC_{traj_id}.csv", traj_id)

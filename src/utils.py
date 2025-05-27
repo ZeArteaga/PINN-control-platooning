@@ -60,8 +60,8 @@ def save_trajectory_plot(data: dict, path: str, traj_id: str) -> pd.DataFrame:
     ax_u.grid(True)
 
     #Spacing
-    axs[1,1].plot(df['t'], df['d'], label='Actual Spacing (m)')
-    axs[1,1].plot(df['t'], df['d_target'], label='Target Spacing (m)', linestyle='--')
+    axs[1,1].plot(df['t'], df['d_fv0_lv'], label='Actual Spacing (m)')
+    axs[1,1].plot(df['t'], df['d*_fv0_lv'], label='Target Spacing (m)', linestyle='--')
     axs[1,1].set_title("Inter-Vehicle Spacing")
     axs[1,1].set_xlabel("Time (s)")
     axs[1,1].set_ylabel("Spacing (m)")
