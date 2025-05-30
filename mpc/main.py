@@ -27,12 +27,11 @@ if __name__ == "__main__":
     d_min = 2
     L_prec = 4.5 #same len for every CAV
     dt = 0.1
-    t_end = 1
+    t_end = 30
     noise_std = 0 #TODO
     t_samp = np.array([0, 5, 10, 15, 25, t_end]) #time check points
     t = np.arange(start=t_samp[0], stop=t_end+dt, step=dt) #end at t_end seconds
-   
-    # Leader vehicle TODO: create leader model
+    #TODO: add driving cycle for leader
     lv_samp = np.array([50, 50, 50, 50, 50, 50]) / 3.6 #leader speed check points 
     lv_speed = interp1d(t_samp, lv_samp, kind='quadratic') #quadratic interpolation -> no drivetrain limitation for now
     lv_x0 = 200
@@ -55,25 +54,34 @@ if __name__ == "__main__":
     model_params = {'h': h,
                     'd_min': d_min,
                     'L_prec': L_prec,
-                    'dt': dt,
                     'm': VEHICLE_MASS_KG}
 
     mpc_config = {
-            'n_horizon': 30,
+            'n_horizon': 10,
             't_step': dt, #set equal to dt for model training
             'n_robust': 0, #for scenario based mpc -> see mpc.set_uncertainty_values()
-            #...not really online refinement of the PINN parameters which is the goal
             'store_full_solution': True,
-            'Q': np.diag([10, 100]),
-            'P': 10,
-            'R': 0.0001,
-            'd_min': d_min,
-            'u_max': 2000}
+            'collocation_deg': 2, #default 2nd-degree polynomial to approximate the state trajectories
+            'collocation_ni': 1, #default
+            }
+    
+    opt_params = {
+        'Q': np.diag([100, 10]),
+        'P': 10,
+        'R': 0.0001,
+        #TODO: Realistic Constraints
+    }
+
+    sim_config = {
+        't_step': dt,
+        'reltol': 1e-10, #default
+        'abstol': 1e-10 #default
+    }
     #*---
 
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
-    mpc_model = SecondOrderPINNmodel("../models/onnx/pinn_c0_c1.onnx", model_params) #!DEBUG -> using same ideal model for both to fix controller issues
+    mpc_model = SecondOrderPINNmodel("../models/onnx/pinn_model_udds_10%.onnx", model_params)
     plant_model = SecondOrderIdeal(model_params)
     print("Pinn model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
     print("Pinn model time varying parameters (provided):", mpc_model.tvp.keys())
@@ -85,10 +93,13 @@ if __name__ == "__main__":
             fn_get_prec = get_lv_state #set leader function
         else:
             #! not implemented
-            raise NotImplementedError("MPC setup for followers beyond the leader is not implemented yet.")
-        mpc = setupDMPC(mpc_model, mpc_config, fn_get_prec)
+            raise NotImplementedError("Setup for followers beyond the leader is not implemented yet.")
+        
+        mpc = setupDMPC(mpc_model, mpc_config, opt_params, fn_get_prec)
+        mpc.settings.set_linear_solver(solver_name='MA27') #boosts speed supposedly
         print("\n", mpc.settings)
-        sim = setupSim(plant_model, t_step=dt, get_prec_state=fn_get_prec)
+
+        sim = setupSim(plant_model, sim_config, get_prec_state=fn_get_prec)
         platoon.append(FV(fv_initials[i], mpc, sim)) #create follower and add to platoon
 
     #test:
@@ -125,9 +136,9 @@ if __name__ == "__main__":
         #* That's why there was a problem with the calculated gap vs the last actual gap calculated by the sim,
         #* because this last one was stored using the previous leader position. So the update has to be in the middle to sync the two,
         #* and eliminate the discrepancy that was causing a steady-state error. 
+
         lv_curr_state['v'] = lv_speed(t_value) 
         lv_curr_state['x'] += lv_curr_state['v'] * dt
-
         fv0.state = fv0.sim.make_step(u)
         #!DEBUG
         """ print(f"DEBUG: Simulator state at t={t_value:.1f}")
