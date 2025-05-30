@@ -1,5 +1,6 @@
 from do_mpc.data import load_results
-import pickle
+from plotting import setup_graphics, plot
+import matplotlib.pyplot as plt
 
 """ print(fv0.sim.data['_aux', 'e_i'][int(t_end/dt), 0])
 print(fv0.mpc.data['_aux', 'e_i'][int(t_end/dt)-1]) """
@@ -9,6 +10,7 @@ results = load_results(file)
 mpc_data = results["mpc"]
 sim_data = results["simulator"]
 
-i=1
-print(sim_data["_aux", "e_i"][i])
-print(mpc_data.prediction(("_aux", "e_i"), t_ind=i)[0,0])
+mpc_graphics, sim_graphics = setup_graphics(mpc_data, sim_data)
+
+plot(sim_graphics, name="(plant)")
+

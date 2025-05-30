@@ -1,4 +1,5 @@
 import onnx
+import joblib
 import casadi as ca 
 from do_mpc.sysid import ONNXConversion
 from do_mpc.model import Model
@@ -43,8 +44,9 @@ def _apply_kinematics_define_expr(
     model.set_expression('E', E)
 
 
-def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict, **kwargs) -> Model: 
-    onnx_model = onnx.load(onnx_model_path)
+def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
+                         scalerX_path: str = None, scalerY_path: str = None) -> Model: 
+    onnx_model = onnx.load(onnx_model_path)    
     ca_converter = ONNXConversion(onnx_model)
     #*TEST CASadi CONVERSION ----:
     # print(ca_converter)
@@ -60,8 +62,18 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict, **kwargs) -> 
     d = x_prec - x
     d_ref = d_min + h*v
     features = ca.horzcat(t, u, v, d, d_ref) #correct order of features
+    if scalerX_path:
+        scalerX = joblib.load(scalerX_path)
+        #normalize manually, without breaking CASadi
+        scaleX = ca.DM(scalerX.scale_).reshape((1,-1))
+        minX = ca.DM(scalerX.min_).reshape((1,-1))
+        features = features*scaleX + minX  #DM is for numeric matrixes
+        
     ca_converter.convert(input=features)
     a = ca_converter['output'] #get PINN prediction
+    if scalerY_path:
+        scalerY = joblib.load(scalerY_path)
+        a = a * scalerY.scale_ + scalerY.mean_  #in this case the scaler has single values/floats
 
     _apply_kinematics_define_expr(model, x, v, a, 
                                   x_prec, L_prec, d_min, h, v_prec) 

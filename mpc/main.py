@@ -5,7 +5,7 @@ from do_mpc.simulator import Simulator
 from do_mpc.controller import MPC
 from modelling import SecondOrderPINNmodel, SecondOrderIdeal
 from controller import setupDMPC, setupSim
-from plotting import setup_graphics
+from plotting import setup_graphics, plot
 from do_mpc.data import save_results
 class FV:
      def __init__(self, fv_initial: np.ndarray, mpc: MPC, sim: Simulator):
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     
     opt_params = {
         'Q': np.diag([100, 10]),
-        'P': 10,
+        'P': 100,
         'R': 0.0001,
         #TODO: Realistic Constraints
     }
@@ -81,7 +81,9 @@ if __name__ == "__main__":
 
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
-    mpc_model = SecondOrderPINNmodel("../models/onnx/pinn_model_udds_10%.onnx", model_params)
+    mpc_model = SecondOrderPINNmodel("../models/onnx/pinn_model_udds_10%.onnx", model_params,
+                                     scalerX_path="../models/scalers/scalerX_model_udds_10%.save",
+                                     scalerY_path="../models/scalers/scalerY_model_udds_10%.save")
     plant_model = SecondOrderIdeal(model_params)
     print("Pinn model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
     print("Pinn model time varying parameters (provided):", mpc_model.tvp.keys())
@@ -158,7 +160,6 @@ if __name__ == "__main__":
     save_results([fv0.mpc, fv0.sim], overwrite=True)
 
     fv0.mpc_graphics.plot_predictions(t_ind=0) #Additionally exemplify predictions
-    fv0.sim_graphics.plot_results()
-    fv0.sim_graphics.reset_axes()
+    plot(fv0.sim_graphics, name="(sim)")
 
     plt.show()
