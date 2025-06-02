@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from config import PHYSICS_PARAMS, SIM_PARAMS
 from _utils.load_driving_cycle import load_driving_cycle
-from utils import save_trajectory_plot, calc_req_input_from_acc #TODO: refactor this
+from _utils.utils import save_trajectory_plot, calc_req_input_from_acc #TODO: refactor this
 
 def gen_cacc_fv(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params):
     h = sim_params["h"]

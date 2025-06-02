@@ -2,7 +2,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 from scipy.interpolate import interp1d
 from config import PHYSICS_PARAMS, SIM_PARAMS
-from utils import save_trajectory_plot, calc_req_input_from_acc
+from _utils.utils import save_trajectory_plot, calc_req_input_from_acc
 
 def vehicle_int(t, y, a_target_fn, params: dict):
     a_max = params["a_max"]
@@ -53,6 +53,6 @@ if __name__ == "__main__":
             'a': a_eff #output acceleration
         }
 
-        save_trajectory_plot(data, path=f"../data/leader_profile_{id}.csv", traj_id=id, follower=False)
+        save_trajectory_plot(data, path=f"../data/leader_profile_{id}.csv", traj_id=id)
 
         
