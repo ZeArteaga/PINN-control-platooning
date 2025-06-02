@@ -85,6 +85,8 @@ if __name__ == "__main__":
     pinn_model_path = os.path.join(script_dir, "../models/onnx/pinn_model_udds_10%.onnx")
     scalerX_path = os.path.join(script_dir, "../models/scalers/scalerX_model_udds_10%.save")
     scalerY_path = os.path.join(script_dir, "../models/scalers/scalerY_model_udds_10%.save")
+    results_path = os.path.join(script_dir, ".results/")
+
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
     mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
@@ -163,7 +165,7 @@ if __name__ == "__main__":
         print(f"  Calculated gap: {sim_x_prec - sim_x - L_prec}", f"using {fv0.sim.model.aux['d']}")
         print(f"  Actual gap (d): {sim_gap}\n") """
     
-    save_results([fv0.mpc, fv0.sim], overwrite=True)
+    save_results([fv0.mpc, fv0.sim], overwrite=True, result_path=results_path)
 
     fv0.mpc_graphics.plot_predictions(t_ind=0) #Additionally exemplify predictions
     plot(fv0.sim_graphics, name="(sim)")
