@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -27,12 +28,12 @@ if __name__ == "__main__":
     d_min = 2
     L_prec = 4.5 #same len for every CAV
     dt = 0.1
-    t_end = 30
+    t_samp = np.array([0, 5, 10, 15, 20]) #time check points
+    t_end = t_samp[-1]
     noise_std = 0 #TODO
-    t_samp = np.array([0, 5, 10, 15, 25, t_end]) #time check points
     t = np.arange(start=t_samp[0], stop=t_end+dt, step=dt) #end at t_end seconds
     #TODO: add driving cycle for leader
-    lv_samp = np.array([50, 50, 50, 50, 50, 50]) / 3.6 #leader speed check points 
+    lv_samp = np.array([50, 50, 50, 50, 50]) / 3.6 #leader speed check points 
     lv_speed = interp1d(t_samp, lv_samp, kind='quadratic') #quadratic interpolation -> no drivetrain limitation for now
     lv_x0 = 200
     lv_curr_state = { #initial state - Leader Vehicle
@@ -79,11 +80,16 @@ if __name__ == "__main__":
     }
     #*---
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    pinn_model_path = os.path.join(script_dir, "../models/onnx/pinn_model_udds_10%.onnx")
+    scalerX_path = os.path.join(script_dir, "../models/scalers/scalerX_model_udds_10%.save")
+    scalerY_path = os.path.join(script_dir, "../models/scalers/scalerY_model_udds_10%.save")
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
-    mpc_model = SecondOrderPINNmodel("../models/onnx/pinn_model_udds_10%.onnx", model_params,
-                                     scalerX_path="../models/scalers/scalerX_model_udds_10%.save",
-                                     scalerY_path="../models/scalers/scalerY_model_udds_10%.save")
+    mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
+                                     scalerX_path=scalerX_path,
+                                     scalerY_path=scalerY_path)
     plant_model = SecondOrderIdeal(model_params)
     print("Pinn model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
     print("Pinn model time varying parameters (provided):", mpc_model.tvp.keys())
