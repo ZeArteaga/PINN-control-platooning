@@ -82,9 +82,9 @@ if __name__ == "__main__":
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    pinn_model_path = os.path.join(script_dir, "../models/onnx/pinn_model_udds_10%.onnx")
-    scalerX_path = os.path.join(script_dir, "../models/scalers/scalerX_model_udds_10%.save")
-    scalerY_path = os.path.join(script_dir, "../models/scalers/scalerY_model_udds_10%.save")
+    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinn_model_udds_10%.onnx")
+    scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_model_udds_10%.save")
+    scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_model_udds_10%.save")
     results_path = os.path.join(script_dir, ".results/")
 
     # Building platoon...
