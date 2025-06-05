@@ -1,111 +1,136 @@
-import carla
+import argparse
 import random
 import time 
 import numpy as np
-
+import carla
+from Core import Simulation, Platoon
 #*assuming an already active server with a picked town: 
         #* ./config.py --map Town05
         #* then in carla root run ./CarlaUE4.sh  
 
-def main(host='localhost', port=2000, render:bool=True, dt:float=0.1, t_end:float=np.inf):
+def main(n_followers: int, sim_dt:float=0.01, control_rate=10, t_end:float=np.inf,
+          host='localhost', port=2000, render:bool=True):
     """
     Args:
+            n_followers: number of platoon following vehicles to add (not counting the leader)
+			sim_dt: length of a simulation time step
+            control_rate: defines the rate in steps of the controller (e.g 2 -> every 2 steps of simulation, each one sim_dt time
+			t_end: Defaults to np.inf to run indefinetly
 			host: Carla server host
 			port: Carla server port
 			render: Turns rendering on (True) or off (False)
-			dt: length of a simulation time step
-			t_end: Defaults to np.inf to run indefinetly
 		"""
     
     actor_list = []
-    client = None
+    sim = None
+    SEED = 31
 
     try:
-        #*GET CLIENT AND WORLD
-        client = carla.Client(host, port)
-        client.set_timeout(10.0)
+        #*GET CLIENT, WORLD, TRAFFIC MANAGER
+        sim = Simulation(host, port,
+                          large_map=False, dt=sim_dt, synchronous=True, render=render)
+        print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 
-        world = client.get_world()
-        print(f"Successfully connected to Carla. Current map: {world.get_map().name}")
-        
-        #*APPLY SETTINGS
-        original_settings = world.get_settings()
-        settings = world.get_settings()
-        settings.synchronous_mode = True #enable sync mode for control purposes
-        settings.fixed_delta_seconds = dt # matching MPC dts
-        print("Synchronous mode enabled with fixed_delta_seconds =", settings.fixed_delta_seconds)
-        settings.no_rendering_mode = not render
-        if render:
-            print("Rendering is ON!")
-        else: print("Rendering is OFF!")
-        world.apply_settings(settings)
+        spect = sim.get_spectator()
+        tm = sim.get_trafficmanager(port=8000)
+        tm_port = tm.get_port()
+        tm.set_random_device_seed(SEED) #for simulation determinism
+        print("Got Traffic Manager.")
 
         #*PICK VEHICLE
-        blueprint_library = world.get_blueprint_library()
-        vehicle_bp = blueprint_library.filter('vehicle.mini.cooper_s_2021')[0] #returns a list so we pick the only element
+        vehicle_bp_lib = sim.get_vehicle_blueprints()
+        lv_bp = vehicle_bp_lib.filter('vehicle.mini.cooper_s_2021')[0] #returns a list so we pick the only element
 
-        #*SPAWN VEHICLE AND ADD TO ACTOR LIST
-        spawn_points = world.get_map().get_spawn_points()
+        #*SPAWN LEAD VEHICLE AND ADD TO ACTOR LIST AND PLATOON
+        spawn_points = sim.get_map().get_spawn_points()
         if not spawn_points:
             print("Could not retrieve spawn points from map!")
             return
         
-        spawn_point = random.choice(spawn_points)
-        vehicle = world.spawn_actor(vehicle_bp, spawn_point)
-        actor_list.append(vehicle)
-        print(f"Spawned actor: {vehicle.type_id} (id: {vehicle.id}) at {spawn_point.location}")
+        lv_sp = random.choice(spawn_points)
+        platoon = Platoon(sim)
+        lv = platoon.add_lead_vehicle(lv_bp, lv_sp)
+        #DONT APPEND TO ACTORS LIST, THIS ONLY FOR NPCs
+        print(f"Spawned LV: {lv.type_id} (id: {lv.id}) at {lv_sp.location}")
+        #TODO: Modify deafault autopilot behavior
+        sim.tick()
+        lv.set_autopilot(True, tm_port)
+
+        #* SPAWN FOLLOWERS
+        for i in range(0, n_followers):
+            followers = platoon.get_follower_list()
+            fv = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
+                                                else followers[-1].transform_ahead(-10, force_straight=True)))
+            fv.set_autopilot(True, tm_port) #! REMOVE WHEN FOLLOWER CONTROLLER IS INTEGRATED
+            sim.tick()
+            sim.tick()
+            
+            print(f"Spawned FV: {fv.type_id} (id: {fv.id})")
+
         
-        vehicle.set_autopilot(True)
-
-        #*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
-        spectator = world.get_spectator()
-        vehicle_ini_tf = vehicle.get_transform()
-        spectator_loc = vehicle_ini_tf.location + carla.Location(x=-10, z=5)
-        spectator_rot = carla.Rotation(pitch=vehicle_ini_tf.rotation.pitch-20.0, 
-                                           yaw=vehicle_ini_tf.rotation.yaw, 
-                                           roll=vehicle_ini_tf.rotation.roll) #looking down at the car
-        spectator.set_transform(carla.Transform(spectator_loc, spectator_rot))
-
         #*SIMULATING
         print("Running simulation loop...")
         i:int = 0
         if t_end != np.inf: 
-            step_end = int(t_end/dt)
+            step_end = int(t_end/sim_dt)
         else:
             step_end = np.inf
+
         while i<=step_end:
-            world.tick() #advance the simulation by one step (fixed_delta_seconds)
+            if i % control_rate == 0:
+                #TODO: CONTROL PLATOON HERE
+
+                #*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
+                spect_transf = platoon[-1].transform_ahead(-5, force_straight=True) #platoon[0] is leader
+                spect_transf.location.z += 3
+                spect_transf.rotation.pitch = -15
+                spect.set_transform(spect_transf)
+
+                print(f"Step {i}: LV at {lv.get_transform()}")
+            sim.tick() #advance the simulation by one step (fixed_delta_seconds)            
             i += 1
-            print(f"Step {i}: Vehicle at {vehicle.get_transform()}")
+
+        sim.release_synchronous()
+
 
     except KeyboardInterrupt:
-                print("\nSimulation interrupted by user (Ctrl+C).")
+        print("\nSimulation interrupted by user (Ctrl+C).")
     except Exception as e:
         print(f"An error occurred: {e}")
-
     finally:
         print("Simulation finished.")
         print("Cleaning up...")
-        if client and world:
+        world = sim.get_world()
+        if sim and world:
             # Restore original settings (important to disable sync mode)
-            if 'original_settings' in locals(): # Check if original_settings was defined
-                 print("Restoring original world settings.")
-                 world.apply_settings(original_settings)
-            elif settings.synchronous_mode: # only if we actually changed it
-                    print("Disabling synchronous mode (fallback).")
-                    current_settings = world.get_settings()
-                    current_settings.synchronous_mode = False
-                    current_settings.fixed_delta_seconds = None
-                    world.apply_settings(current_settings)
-            if 'spectator' in locals():
-                print("Restoring original spectator position.")
-                spectator.set_transform(carla.Transform())
+            print("Restoring original world settings.")
+            world.apply_settings(sim.get_original_settings())
+        if platoon:
+            sim.apply_batch([carla.command.DestroyActor(v.id) for v in platoon])
+            print(f"Destroying platoon with {len(platoon)} vehicles.")
         if actor_list:
             print(f"Destroying {len(actor_list)} actors.")
-            client.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
-            # A small delay to ensure actors are destroyed before script exits, can sometimes help
+            sim.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
+            # A small delay to ensure actors are destroyed before script exits
             time.sleep(0.5) 
         print("Cleanup finished.")
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("n_followers", type=int, help="Number of followers to add behind the platoon leader")
+    parser.add_argument("--sim-dt", type=float, default=0.01, help="Simulation time step")
+    parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
+    parser.add_argument("--t-end", type=float, default=np.inf, help="Simulation end time")
+    parser.add_argument("--host", type=str, default='localhost', help="Carla server host")
+    parser.add_argument("--port", type=int, default=2000, help="Carla server port")
+    parser.add_argument("--no-render", action="store_false", help="Enable rendering")
+    args = parser.parse_args()
+    main(
+        n_followers=args.n_followers,
+        sim_dt=args.sim_dt,
+        control_rate=args.control_rate,
+        t_end=args.t_end,
+        host=args.host,
+        port=args.port,
+        render=args.no_render
+    )
