@@ -5,6 +5,7 @@ import numpy as np
 from collections import deque
 from copy import copy
 import warnings
+from do_mpc.controller import MPC
 
 class Simulation(carla.Client):
 	"""Top level simulation class that handles the connection to Carla and executes steps of the simulation."""
@@ -71,31 +72,12 @@ class Simulation(carla.Client):
 		"""Run one step of the simulation.
 
 		Args:
-			mode: "control" or "sample", low-level PID control is run
-		in both cases, new control inputs are only computed if "sample" is passed
+			mode: "control" or "sample", low-level PID control is run in both cases, new control inputs are only computed if "sample" is passed
 		"""
 		for platoon in self.platoons:
 			if mode == "sample":
 				platoon.take_measurements()
 			platoon.run_pid_step()
-
-	def run(self, steps,  step_callback, control_steps_per_sampling=10):
-		"""Run an entire simulation.
-
-		Alternatively, a loop can be
-		used that directly calls run_step in each iteration.
-
-		Args:
-			steps: the total number of simulation steps
-			step_callback: a callback function to be called
-		in each step
-			control_steps_per_sampling: the number of PID iterations
-		per new control input computation by the platooning controllers
-		"""
-		for step in range(steps):
-			step_callback()
-			self.run_step("sample" if step % control_steps_per_sampling == 0 else "control")
-			self.world.tick()
 
 	def get_vehicle_blueprints(self):
 		"""Get available vehicle blueprints from Carla.
@@ -127,7 +109,6 @@ class Simulation(carla.Client):
 	def tick(self):
 		"""Send a tick to the simulation server."""
 		self.world.tick()
-
 
 class Platoon:
 	"""Platoon represents a simulated vehicle platoon. It contains a lead vehicle and a number of follower vehicles."""
@@ -206,21 +187,28 @@ class Platoon:
 		for vehicle in self.follower_vehicles:
 			vehicle.controller.compute_target_speed(vehicle.index)
 
-	def run_pid_step(self):
-		"""Run one step of PID control on each vehicle using their own controllers."""
-		# run pid step on the lead vehicle
-		try:
-			if not self.lead_vehicle.autopilot:
-				self.lead_vehicle.apply_control(self.lead_vehicle.controller.run_step())
-		except Exception as e:
-			warnings.warn(f"{e}, lead vehicle")
-
-		# run pid step on the follower vehicles
-		for vehicle in self.follower_vehicles:
+	#*changed
+	def control_step(self):
+		"""Run one step of control on each vehicle using their own controllers."""
+		
+		# run step on the lead vehicle
+		#TODO: control leader vehicle on some trajectory, for now autopilot
+		""" if not self.lead_vehicle.autopilot:
 			try:
-				vehicle.control(self.lead_waypoints)
+				...
 			except Exception as e:
-				warnings.warn(f"{e}, follower vehicle {vehicle.index}")
+				warnings.warn(f"{e}, lead vehicle") """
+
+		for i, v in enumerate(self.follower_vehicles):
+			if i==0:
+				d = v.gap_to(self.lead_vehicle) #TODO: CAMERA INSTEAD OF GROUND TRUTH
+			else:
+				d = v.gap_to(self[i-1]) 
+			try:
+				state = np.array([d, v.speed]) #* verify correct state order
+				v.control_step(state)
+			except Exception as e:
+				warnings.warn(f"FV{v.index}: {e}")
 
 	def reindex(self):
 		"""Adjust the index attributes of the Vehicle instances in the platoon to match the actual order."""
@@ -360,9 +348,9 @@ class Vehicle:
 		"""Pass on attribute and method calls to the underlying carla.Vehicle instance."""
 		return getattr(self._carla_vehicle, attr)
 
-	def attach_controller(self, controller):
+	def attach_controller(self, controller: MPC):
 		"""Attach a controller (e.g. FollowerController, LeadNavigator)."""
-		self.controller = controller
+		self.controller: MPC = controller
 
 	def set_autopilot(self, is_autopilot, tm_port):
 		"""Turn on Carla autopilot.
@@ -402,24 +390,31 @@ class Vehicle:
 		transform = self._carla_vehicle.get_transform()
 		return transform.rotation.yaw
 
-	def distance_to(self, other):
-		"""Distance to another vehicle.
+	def gap_to(self, other):
+		"""Bumper-to-bumper distance to another vehicle.
 
 		Args:
 			other: the other vehicle.
 		"""
-		location = self._carla_vehicle.get_location()
-		other_location = other.get_location()
-		return location.distance(other_location)
+		self_len = self.bounding_box.extent.x
+		self_fb = self.transform_ahead(self_len/2, force_straight=True).location #in world coords: center of geometry + len/2,
+		
+		other_len = other.bounding_box.extent.x
+		other_bb = other.transform_ahead(-other_len/2, force_straight=True).location			   
 
-	def control(self, lead_waypoints):
-		"""For a follower vehicle, this method applies one control step.
+		return self_fb.distance(other_bb)
 
-		Args:
-			lead_waypoints: saved waypoints of the lead vehicle,
-		this vehicle will try to follow the same spatial trajectory.
-		"""
-		self.apply_control(self.controller.compute_control(lead_waypoints, self.index))
+	def control_step(self, state: np.ndarray):
+		"""For a follower vehicle, this method applies one control step."""
+
+		u = float(self.controller.make_step(state))
+		mass = float(self.get_physics_control().mass)
+
+		ackermann_control = carla.VehicleAckermannControl(
+        	speed=float(self.speed),             # m/s
+        	acceleration=u / mass           # m/s²
+    	)
+		self.apply_ackermann_control(ackermann_control)
 
 	def transform_ahead(self, distance, force_straight=False):
 		"""Return a carla.Transform ahead (or behind with a negative distance) of the vehicle.
