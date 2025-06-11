@@ -59,7 +59,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 
         #*PICK VEHICLE
         vehicle_bp_lib = sim.get_vehicle_blueprints()
-        lv_bp = vehicle_bp_lib.filter('vehicle.mini.cooper_s_2021')[0] #returns a list so we pick the only element
+        lv_bp = vehicle_bp_lib.filter('vehicle.audi.tt')[0] #returns a list so we pick the only element
 
         #*SPAWN LEAD VEHICLE AND ADD TO ACTOR LIST AND PLATOON
         spawn_points = sim.get_map().get_spawn_points()
@@ -105,6 +105,9 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         while i<=step_end:
             if i % control_rate == 0:
                 #*RUN PLATOON CONTROL STEP
+                #!DEBUG
+                a = platoon[1].acceleration
+                print(f"Next step a={a}")
                 platoon.control_step()
 
             #*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES

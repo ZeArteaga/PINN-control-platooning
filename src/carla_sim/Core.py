@@ -409,13 +409,16 @@ class Vehicle:
 
 		u = float(self.controller.make_step(state))
 		mass = float(self.get_physics_control().mass)
-
+		dt:float = self.controller.settings.t_step
+		a:float = u/mass
 		ackermann_control = carla.VehicleAckermannControl(
-        	speed=float(self.speed),             # m/s
-        	acceleration=u / mass           # m/s²
+        	speed=self.speed + dt*a,             # m/s
+        	acceleration=a           # m/s²
     	)
 		self.apply_ackermann_control(ackermann_control)
-
+		#!DEBUG
+		print(f"Target a={a}")
+	
 	def transform_ahead(self, distance, force_straight=False):
 		"""Return a carla.Transform ahead (or behind with a negative distance) of the vehicle.
 
