@@ -4,6 +4,8 @@ import time
 import numpy as np
 import os
 import carla
+from .agents.navigation.controller import PIDLongitudinalController
+
 from do_mpc.model import Model
 
 from .Core import Simulation, Platoon
@@ -59,7 +61,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 
         #*PICK VEHICLE
         vehicle_bp_lib = sim.get_vehicle_blueprints()
-        lv_bp = vehicle_bp_lib.filter('vehicle.audi.tt')[0] #returns a list so we pick the only element
+        lv_bp = vehicle_bp_lib.filter('vehicle.mini.cooper_s_2021')[0] #returns a list so we pick the only element
 
         #*SPAWN LEAD VEHICLE AND ADD TO ACTOR LIST AND PLATOON
         spawn_points = sim.get_map().get_spawn_points()
@@ -67,7 +69,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             print("Could not retrieve spawn points from map!")
             return
         
-        lv_sp = random.choice(spawn_points)
+        lv_sp = spawn_points[1]
         platoon = Platoon(sim)
         lv = platoon.add_lead_vehicle(lv_bp, lv_sp)
         #DONT APPEND TO ACTORS LIST, THIS ONLY FOR NPCs
@@ -86,7 +88,9 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             mpc.settings.set_linear_solver(solver_name='MA27') #boosts speed supposedly
             print(f"\n FV{i} controller settings:", mpc.settings)
             mpc.set_initial_guess()
-            fv.attach_controller(mpc)
+            pid = PIDLongitudinalController(fv, dt=sim_dt,
+                                             K_P=5, K_I=0.1, K_D=0)
+            fv.attach_controller(mpc, pid)
 
             sim.tick()
             sim.tick()
@@ -101,14 +105,26 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         else:
             step_end = np.inf
 
-        control_rate = int(mpc.settings.t_step/sim_dt)
+        control_dt = mpc.settings.t_step
+        control_rate = int(control_dt/sim_dt)
+        followers = platoon.get_follower_list()
+        v_refs = np.zeros(shape=len(followers),)
         while i<=step_end:
             if i % control_rate == 0:
-                #*RUN PLATOON CONTROL STEP
+                #*CALCULATE PLATOON CONTROL STEP EVERY CONTROL_DT
+                a_refs: np.array = platoon.control_step()
+                for idx,fv in enumerate(followers):
+                    v_refs[idx] = fv.speed
+                    print(f"gap={fv.controller.data['_aux', 'd'][-1]}, " +
+                          f"target gap={fv.controller.data['_aux', 'd_ref'][-1]} " +
+                          f"command acc={a_refs[idx]}")
+            #*..APPLY PREV CONTROL STEP COMMAND EVERY SIM_DT
+            v_refs = v_refs + a_refs*sim_dt
+            for idx,fv in enumerate(followers):
                 #!DEBUG
-                a = platoon[1].acceleration
-                print(f"Next step a={a}")
-                platoon.control_step()
+                print(f"t={sim_dt*i} Target speed = {v_refs[idx]*3.6}")
+                control = fv.run_pid_step(v_refs[idx], debug=True) #returns current speed in km/h
+                fv.apply_control(control)
 
             #*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
             spect_transf = platoon[-1].transform_ahead(-5, force_straight=True) #platoon[0] is leader
@@ -177,8 +193,10 @@ if __name__ == '__main__':
             't_step': args.control_rate * args.sim_dt,
             'n_robust': 0, #not using: for scenario based mpc -> see mpc.set_uncertainty_values()
             'store_full_solution': True,
-            'collocation_deg': 2, #default 2nd-degree polynomial to approximate the state trajectories
+            'collocation_deg': 2, #default 2nd-degree polynomial 
+            #to approximate the state trajectories
             'collocation_ni': 1, #default
+            'nlpsol_opts': {'ipopt.linear_solver': 'MA27'}
             }
     
     opt_params = {

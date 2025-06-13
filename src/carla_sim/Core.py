@@ -6,6 +6,7 @@ from collections import deque
 from copy import copy
 import warnings
 from do_mpc.controller import MPC
+from .agents.navigation.controller import PIDLongitudinalController
 
 class Simulation(carla.Client):
 	"""Top level simulation class that handles the connection to Carla and executes steps of the simulation."""
@@ -188,8 +189,8 @@ class Platoon:
 			vehicle.controller.compute_target_speed(vehicle.index)
 
 	#*changed
-	def control_step(self):
-		"""Run one step of control on each vehicle using their own controllers."""
+	def control_step(self) -> list[float]:
+		"""Run one step of control on each vehicle using their own controllers and return optimal references."""
 		
 		# run step on the lead vehicle
 		#TODO: control leader vehicle on some trajectory, for now autopilot
@@ -198,7 +199,7 @@ class Platoon:
 				...
 			except Exception as e:
 				warnings.warn(f"{e}, lead vehicle") """
-
+		a_refs = []
 		for i, v in enumerate(self.follower_vehicles):
 			if i==0:
 				d = v.gap_to(self.lead_vehicle) #TODO: CAMERA INSTEAD OF GROUND TRUTH
@@ -206,9 +207,11 @@ class Platoon:
 				d = v.gap_to(self[i-1]) 
 			try:
 				state = np.array([d, v.speed]) #* verify correct state order
-				v.control_step(state)
+				a_ref = v.control_step(state)
+				a_refs.append(a_ref)
 			except Exception as e:
 				warnings.warn(f"FV{v.index}: {e}")
+		return np.array(a_refs)
 
 	def reindex(self):
 		"""Adjust the index attributes of the Vehicle instances in the platoon to match the actual order."""
@@ -335,7 +338,8 @@ class Vehicle:
 		self.map = self.world.get_map()
 		self._carla_vehicle = world.spawn_actor(blueprint, spawn_point)
 		self.index = index
-		self.controller = None
+		self.controller = None #high level controller
+		self.pid = None #low level controller
 		self._autopilot = False
 
 	def __lt__(self, other):
@@ -348,9 +352,10 @@ class Vehicle:
 		"""Pass on attribute and method calls to the underlying carla.Vehicle instance."""
 		return getattr(self._carla_vehicle, attr)
 
-	def attach_controller(self, controller: MPC):
+	def attach_controller(self, controller: MPC, pid: PIDLongitudinalController):
 		"""Attach a controller (e.g. FollowerController, LeadNavigator)."""
-		self.controller: MPC = controller
+		self.controller = controller
+		self.pid = pid
 
 	def set_autopilot(self, is_autopilot, tm_port):
 		"""Turn on Carla autopilot.
@@ -409,15 +414,11 @@ class Vehicle:
 
 		u = float(self.controller.make_step(state))
 		mass = float(self.get_physics_control().mass)
-		dt:float = self.controller.settings.t_step
-		a:float = u/mass
-		ackermann_control = carla.VehicleAckermannControl(
-        	speed=self.speed + dt*a,             # m/s
-        	acceleration=a           # m/s²
-    	)
-		self.apply_ackermann_control(ackermann_control)
-		#!DEBUG
-		print(f"Target a={a}")
+		a_ref:float = u/mass
+		return a_ref
+	
+	def run_pid_step(self, v_ref: float, debug: bool) -> carla.VehicleControl:
+		return carla.VehicleControl(self.pid.run_step(v_ref, debug))
 	
 	def transform_ahead(self, distance, force_straight=False):
 		"""Return a carla.Transform ahead (or behind with a negative distance) of the vehicle.
