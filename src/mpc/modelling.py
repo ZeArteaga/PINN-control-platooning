@@ -62,15 +62,16 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
     h, d_min, u, v, d, t, v_prec = _set_model_common_params(model, const_params)
     
     d_ref = d_min + h*v
-    features = ca.horzcat(t, u, v, d, d_ref) #correct order of features
+    X = ca.horzcat(t, u, v, d, d_ref) #correct order of features
     if scalerX_path:
         scalerX = joblib.load(scalerX_path)
+        target_min = scalerX.feature_range[0]
         #normalize manually, without breaking CASadi
         scaleX = ca.DM(scalerX.scale_).reshape((1,-1))
         minX = ca.DM(scalerX.min_).reshape((1,-1))
-        features = features*scaleX + minX  #DM is for numeric matrixes
+        X = target_min + (X-minX)*scaleX
         
-    ca_converter.convert(input=features)
+    ca_converter.convert(input=X)
     a = ca_converter['output'] #get PINN prediction
     if scalerY_path:
         scalerY = joblib.load(scalerY_path)
