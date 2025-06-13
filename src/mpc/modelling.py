@@ -6,33 +6,34 @@ from do_mpc.model import Model
 
 def _set_model_common_params(model, const_params: dict):
     """
-    Creates the basic model structure with common variables and parameters.
+    Adds to the basic model structure with common variables and parameters.
     """
     h = const_params["h"]
     d_min = const_params["d_min"]
-    L_prec = const_params["L_prec"]
 
     u = model.set_variable('_u', 'u', shape=(1, 1))
-    x = model.set_variable('_x', 'x', shape=(1, 1))
+    #x = model.set_variable('_x', 'x', shape=(1, 1)) assuming 1D scenario else this is isn't needed
+    d = model.set_variable('_x', 'd', shape=(1, 1))
     v = model.set_variable('_x', 'v', shape=(1, 1))
 
-    t = model.set_variable('_tvp', 't', shape=(1, 1)) # PINN input feature or general time
-    x_prec = model.set_variable('_tvp', 'x_prec', shape=(1, 1))
+    t = model.set_variable('_tvp', 't', shape=(1, 1)) # PINN input feature
     v_prec = model.set_variable('_tvp', 'v_prec', shape=(1, 1))
     
-    return model, u, x, v, t, x_prec, v_prec, h, d_min, L_prec
+    return h, d_min, u, v, d, t, v_prec
 
 def _apply_kinematics_define_expr(
     model: Model, 
-    x, v, a, x_prec, L_prec, d_min, h, v_prec):
+    v, a, d, d_min, h, v_prec):
     # Discrete‐kinematics update
-    dvdt = a
-    dxdt = v
-    model.set_rhs('x', dxdt)
+    """ dxdt = v 
+    model.set_rhs('x', dxdt) """
+    dgapdt = v_prec - v #gap
+    dvdt = a #vi
+    model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
 
-    d_ref = d_min + h * v
-    d = x_prec - x - L_prec 
+
+    d_ref = d_min + h * v 
     e = d - d_ref
     ev = v_prec - v - h * a
     E = ca.vertcat(e, ev)
@@ -58,25 +59,25 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
     #*Do-MPC model setup
     model = Model('continuous') #can be continous or discrete (have to handle discretization through euler or others)
 
-    model, u, x, v, t, x_prec, v_prec, h, d_min, L_prec = _set_model_common_params(model, const_params)
-    d = x_prec - x
+    h, d_min, u, v, d, t, v_prec = _set_model_common_params(model, const_params)
+    
     d_ref = d_min + h*v
-    features = ca.horzcat(t, u, v, d, d_ref) #correct order of features
+    X = ca.horzcat(t, u, v, d, d_ref) #correct order of features
     if scalerX_path:
         scalerX = joblib.load(scalerX_path)
+        target_min = scalerX.feature_range[0]
         #normalize manually, without breaking CASadi
         scaleX = ca.DM(scalerX.scale_).reshape((1,-1))
         minX = ca.DM(scalerX.min_).reshape((1,-1))
-        features = features*scaleX + minX  #DM is for numeric matrixes
+        X = target_min + (X-minX)*scaleX
         
-    ca_converter.convert(input=features)
+    ca_converter.convert(input=X)
     a = ca_converter['output'] #get PINN prediction
     if scalerY_path:
         scalerY = joblib.load(scalerY_path)
         a = a * scalerY.scale_ + scalerY.mean_  #in this case the scaler has single values/floats
 
-    _apply_kinematics_define_expr(model, x, v, a, 
-                                  x_prec, L_prec, d_min, h, v_prec) 
+    _apply_kinematics_define_expr(model, v, a, d, d_min, h, v_prec)
     
     model.setup() #after this cannot setup more variables
     return model
@@ -84,13 +85,11 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
 def SecondOrderIdeal(const_params: dict) -> Model:
     model = Model('continuous') #can be continous or discrete
 
-    model, u, x, v, t, x_prec, v_prec, h, d_min, L_prec = _set_model_common_params(model, const_params)
+    h, d_min, u, v, d, t, v_prec = _set_model_common_params(model, const_params)
     m = const_params["m"]
     a = u / m
 
-    _apply_kinematics_define_expr(model, x, v, a
-                                  , 
-                                  x_prec, L_prec, d_min, h, v_prec) 
+    _apply_kinematics_define_expr(model, v, a, d, d_min, h, v_prec)
     
     model.setup()
     return model

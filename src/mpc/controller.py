@@ -1,9 +1,10 @@
 from do_mpc.model import Model
 from do_mpc.controller import MPC
 from do_mpc.simulator import Simulator
+from carla_sim.Core import Platoon, Vehicle
 import numpy as np
 
-def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state) -> MPC:
+def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, platoon: Platoon, vehicle: Vehicle) -> MPC:
      #*MPC----
     mpc = MPC(model)
     mpc.set_param(**config)
@@ -19,16 +20,18 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state) -> M
     mpc.set_objective(lterm=lterm, mterm=mterm) #, mterm=mterm)
     mpc.set_rterm(u=R) #*ACTUATOR PENALTY
 
-    #*BOUNDS/CONSTRAINTS -> simple bound for thrust force but could define non-linear one
+    #*BOUNDS/CONSTRAINTS -> simple bound for output acc but could define non-linear one
     u_min = opt_params.get('u_min', -np.inf)
     u_max = opt_params.get('u_max', np.inf)
     mpc.bounds['lower', '_u', 'u'] = u_min
     mpc.bounds['upper', '_u', 'u'] = u_max
 
     v_min = opt_params.get('v_min', 0.0)
-    v_max = opt_params.get('v_max', 140/3.6) # e.g., max velocity
+    v_max = opt_params.get('v_max', 120/3.6) # e.g., max velocity
     mpc.bounds['lower', '_x', 'v'] = v_min
     mpc.bounds['upper', '_x', 'v'] = v_max
+
+
     
     #position has no bounds i guess but spacing:
  
@@ -41,14 +44,13 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state) -> M
     tvp_template = mpc.get_tvp_template()
     
     def tvp_fun(t_now): #create time varying parameter fetch function
-        x_prec, v_prec = get_prec_state(t_now) #*get preceeding vehicle state...
-        #print(f"  What mpc has called: {x_prec}, {v_prec}")
+        v_prec = get_prec_state(platoon, vehicle) #*get true (sensor) gap and prec vehicle speed (V2V)
+        #print(f"  What mpc has called: {d}, {v_prec}")
         for k in range(mpc.settings.n_horizon+1):
                 dt = mpc.settings.t_step
                 t_pred = t_now + k * dt 
                 tvp_template['_tvp',k,'t'] = t_pred
                 tvp_template['_tvp',k,'v_prec'] = v_prec #*...and hold v constant 
-                tvp_template['_tvp',k,'x_prec'] = x_prec + k*dt*v_prec  #*keep updating position on constant velocity 
         return tvp_template
     
     mpc.set_tvp_fun(tvp_fun)
@@ -65,7 +67,6 @@ def setupSim(model: Model, sim_config: dict, get_prec_state) -> Simulator:
         x_prec, v_prec = get_prec_state(t_now) #*get preceeding vehicle state...
         #print(f"  What sim has called: {x_prec}, {v_prec}")
         tvp_template['t'] = t_now 
-        tvp_template['x_prec'] = x_prec #*though this time no prediction is made since this sim model (plant)
         tvp_template['v_prec'] = v_prec
         return tvp_template
     
