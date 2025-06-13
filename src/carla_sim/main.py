@@ -30,7 +30,7 @@ def fn_get_prec_state(platoon, vehicle):
     return v_prec
 
 def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
-         fn_get_prec_state, sim_dt:float=0.01, t_end:float=np.inf, 
+         fn_get_prec_state, acc_cons: list, sim_dt:float=0.01, t_end:float=np.inf, 
           host='localhost', port=2000, render:bool=True):
     """
     Args:
@@ -83,13 +83,16 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             followers = platoon.get_follower_list()
             fv = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
                                                 else followers[-1].transform_ahead(-10, force_straight=True)))
-            
+            #*Setup controllers
+            fv_mass = fv.get_physics_control().mass
+            opt_params["u_max"] = acc_cons[1]*fv_mass
+            opt_params["u_min"] = acc_cons[0]*fv_mass
             mpc = setupDMPC(mpc_model, mpc_config, opt_params, fn_get_prec_state, platoon, fv)
             mpc.settings.set_linear_solver(solver_name='MA27') #boosts speed supposedly
             print(f"\n FV{i} controller settings:", mpc.settings)
             mpc.set_initial_guess()
             pid = PIDLongitudinalController(fv, dt=sim_dt,
-                                             K_P=5, K_I=0.1, K_D=0)
+                                             K_P=10, K_I=0.05, K_D=5)
             fv.attach_controller(mpc, pid)
 
             sim.tick()
@@ -115,6 +118,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
                 a_refs: np.array = platoon.control_step()
                 for idx,fv in enumerate(followers):
                     v_refs[idx] = fv.speed
+                    #!DEBUG
                     print(f"gap={fv.controller.data['_aux', 'd'][-1]}, " +
                           f"target gap={fv.controller.data['_aux', 'd_ref'][-1]} " +
                           f"command acc={a_refs[idx]}")
@@ -122,8 +126,10 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             v_refs = v_refs + a_refs*sim_dt
             for idx,fv in enumerate(followers):
                 #!DEBUG
-                print(f"t={sim_dt*i} Target speed = {v_refs[idx]*3.6}")
+                print(f"[t={sim_dt*i}]\n")
+                print(f"Target speed = {v_refs[idx]*3.6}")
                 control = fv.run_pid_step(v_refs[idx], debug=True) #returns current speed in km/h
+                print(control)
                 fv.apply_control(control)
 
             #*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
@@ -176,6 +182,7 @@ if __name__ == '__main__':
     parser.add_argument("--Q", type=float, nargs=2, default=[100, 10], help="MPC: Q matrix diagonal (lagrange term). Usage: Q[0,0] Q[1,1]")
     parser.add_argument("--P", type=float, default=100, help="MPC: P weight (meyer term)")
     parser.add_argument("--R", type=float, default=1e-3, help="MPC: R weight (r-term)")
+    parser.add_argument("--a-limit", type=float, nargs=2, default=[-5, 10], help="MPC constraint (ref. acc): [a_min, a_max]")
     parser.add_argument("--L_prec", type=float, default=3.876, help="Model params: Preeceding vehicle length.")
     parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
     parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")
@@ -229,5 +236,6 @@ if __name__ == '__main__':
         host=args.host,
         port=args.port,
         render=args.no_render,
-        fn_get_prec_state=fn_get_prec_state
+        fn_get_prec_state=fn_get_prec_state,
+        acc_cons = args.a_limit
     )

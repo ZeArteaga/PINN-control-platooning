@@ -418,7 +418,15 @@ class Vehicle:
 		return a_ref
 	
 	def run_pid_step(self, v_ref: float, debug: bool) -> carla.VehicleControl:
-		return carla.VehicleControl(self.pid.run_step(v_ref, debug))
+		throttle_brake = self.pid.run_step(v_ref, debug)
+		control = carla.VehicleControl()
+		if throttle_brake >= 0:
+			control.throttle = throttle_brake
+			control.brake = 0.0
+		else:
+			control.throttle = 0.0
+			control.brake = -throttle_brake
+		return control
 	
 	def transform_ahead(self, distance, force_straight=False):
 		"""Return a carla.Transform ahead (or behind with a negative distance) of the vehicle.

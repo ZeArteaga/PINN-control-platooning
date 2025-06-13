@@ -20,16 +20,18 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     mpc.set_objective(lterm=lterm, mterm=mterm) #, mterm=mterm)
     mpc.set_rterm(u=R) #*ACTUATOR PENALTY
 
-    #*BOUNDS/CONSTRAINTS -> simple bound for thrust force but could define non-linear one
+    #*BOUNDS/CONSTRAINTS -> simple bound for output acc but could define non-linear one
     u_min = opt_params.get('u_min', -np.inf)
     u_max = opt_params.get('u_max', np.inf)
     mpc.bounds['lower', '_u', 'u'] = u_min
     mpc.bounds['upper', '_u', 'u'] = u_max
 
     v_min = opt_params.get('v_min', 0.0)
-    v_max = opt_params.get('v_max', 140/3.6) # e.g., max velocity
+    v_max = opt_params.get('v_max', 120/3.6) # e.g., max velocity
     mpc.bounds['lower', '_x', 'v'] = v_min
     mpc.bounds['upper', '_x', 'v'] = v_max
+
+
     
     #position has no bounds i guess but spacing:
  
