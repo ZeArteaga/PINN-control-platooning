@@ -1,11 +1,12 @@
 import argparse
+import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
-from config import PHYSICS_PARAMS, SIM_PARAMS
 from _utils.load_driving_cycle import load_driving_cycle
-from _utils.utils import save_trajectory_plot, calc_req_input_from_acc #TODO: refactor this
+from _utils.utils import save_trajectory_plot, calc_req_input_from_acc, load_yaml_file
+    
 
 def gen_cacc_fv(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params):
     h = sim_params["h"]
@@ -38,9 +39,16 @@ if __name__ == "__main__":
         type=str,
         help="Name of driving cycle file (e.g. 'udds.txt') to use as leader behavior",
     )
-    args = parser.parse_args()
-
+    args = parser.parse_args() 
     traj_id: str = args.driving_cycle_name.split('.')[0]
+    
+    #load config file
+    config = load_yaml_file(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config.yml'))
+    print(config)
+    PHYSICS_PARAMS = config["PHYSICS_PARAMS"]
+    SIM_PARAMS = config["SIM_PARAMS"]
+    NOISE_STD = SIM_PARAMS["noise_std"]
+
     dt = SIM_PARAMS["dt"]
     #load a driving cycle to serve as the leader
     t_sim, fn_leader_x, fn_leader_v = load_driving_cycle("../data/driving_cycles/"+args.driving_cycle_name, 
@@ -69,20 +77,23 @@ if __name__ == "__main__":
     lv_v_sim =  fn_leader_v(ret.t)
     d_sim = lv_x_sim - fvo_x_sim
     d_target_sim = SIM_PARAMS["d_min"] + SIM_PARAMS["h"]*fv0_v_sim
-    u = calc_req_input_from_acc(ret.y[1,:], a_eff, PHYSICS_PARAMS)
+    a_ref = calc_req_input_from_acc(ret.y[1,:], a_eff, PHYSICS_PARAMS)
 
     data = {
         't': ret.t,
         'fv0_x': fvo_x_sim,
+        'fv0_v_noise': fv0_v_sim + np.random.normal(loc=0, scale=NOISE_STD["v"], size=ret.t.shape),
         'fv0_v': fv0_v_sim,
-        'fv0_v_kmh': fv0_v_sim*3.6,
-        'fv0_u': u, #required input (FORCE)
+        'fv0_u': a_ref, #required input (acc reference)
+        'fv0_a_noise': a_eff + np.random.normal(loc=0, scale=NOISE_STD["a"], size=ret.t.shape), #output acceleration
         'fv0_a': a_eff, #output acceleration
         'lv_x': lv_x_sim,
+        'lv_v_noise': lv_v_sim + np.random.normal(loc=0, scale=NOISE_STD["v"], size=ret.t.shape),
         'lv_v': lv_v_sim,
+        'd_fv0_lv_noise': d_sim + np.random.normal(loc=0, scale=NOISE_STD["d"], size=ret.t.shape),
         'd_fv0_lv': d_sim,
         'd*_fv0_lv': d_target_sim,
     }
 
-    save_trajectory_plot(data, f"../data/CACC_{traj_id}.csv", traj_id)
+    save_trajectory_plot(data, f"../data/driving_cycles/CACC_{traj_id}.csv", traj_id)
 
