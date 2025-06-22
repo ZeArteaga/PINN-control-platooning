@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from do_mpc.simulator import Simulator
 from do_mpc.controller import MPC
-from modelling import SecondOrderPINNmodel, SecondOrderIdeal
+from modelling import SecondOrderPINNmodel, SecondOrderIdeal, ThirdOrderModel
 from controller import setupDMPC, setupSim
 from plotting import setup_graphics, plot
 from do_mpc.data import save_results
@@ -13,7 +13,7 @@ class FV:
         self.state = fv_initial
         self.mpc = mpc
         self.sim = sim
-        self.mpc.x0 = fv_initial
+        self.mpc.x0 = fv_initial[:-1] #dont include acceleration
         self.sim.x0 = fv_initial
         self.mpc.set_initial_guess()
 
@@ -23,11 +23,9 @@ class FV:
 
 if __name__ == "__main__":
     #*CONFIG---
-    VEHICLE_MASS_KG = 1500
-    h = 1
-    d_min = 2
-    L_prec = 4.5 #same len for every CAV
+    VEHICLE_MASS = 1500
     dt = 0.1
+    L_prec = 4.5
     t_samp = np.array([0, 5, 10, 15, 20]) #time check points
     t_end = t_samp[-1]
     noise_std = 0 #TODO
@@ -35,41 +33,56 @@ if __name__ == "__main__":
     #TODO: add driving cycle for leader
     lv_samp = np.array([50, 50, 50, 50, 50]) / 3.6 #leader speed check points 
     lv_speed = interp1d(t_samp, lv_samp, kind='quadratic') #quadratic interpolation -> no drivetrain limitation for now
-    lv_x0 = 200
+    lv_x0 = 30 #start at arbitrary position
     lv_curr_state = { #initial state - Leader Vehicle
-        'x': lv_x0,
+        'x': lv_x0, 
         'v': lv_speed(0)
     }
 
-    def get_lv_state(t_now):
-        x,v = lv_curr_state['x'], lv_curr_state['v'] 
-        #print(x,v)
-        return x,v
+    def fn_get_prec_state(platoon: list, vehicle_idx: int):
+        if vehicle_idx == 0:
+            # For the first follower, the preceding vehicle is the leader.
+            x_prec = lv_curr_state['x']
+            v_prec = lv_curr_state['v']
+        else:
+            # For other followers, the preceding vehicle is in the platoon list.
+            prec = platoon[vehicle_idx - 1]
+            x_prec = prec.state[0]
+            v_prec = prec.state[1]
+
+        return x_prec, v_prec
 
     #Followers
     ini_gap = L_prec + 20 
     fv_v0 = 40/3.6
-    fv_initials = [np.array([lv_x0 - ini_gap, fv_v0])]
+    fv_initials = [np.array([lv_x0 - ini_gap, fv_v0, 0, 0])] #x, v, 0 integral action, 0 acceleration
     platoon_size = len(fv_initials) #excluding leader
     #will use the following to instantiate various decentralized MPC for each CAV
-    model_params = {'h': h,
-                    'd_min': d_min,
-                    'L_prec': L_prec,
-                    'm': VEHICLE_MASS_KG}
+    model_params = {'h': 1,
+                    'd_min': 2,
+                    'L_prec': 4.5,
+                    'm': VEHICLE_MASS,
+                    'tau': 0.5,
+                    }
 
     mpc_config = {
-            'n_horizon': 10,
+            'n_horizon': 30,
             't_step': dt, #set equal to dt for model training
             'n_robust': 0, #for scenario based mpc -> see mpc.set_uncertainty_values()
             'store_full_solution': True,
             'collocation_deg': 2, #default 2nd-degree polynomial to approximate the state trajectories
             'collocation_ni': 1, #default
+            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',
+                            'ipopt.print_level':0, 'print_time':0}
+            
             }
     
     opt_params = {
-        'Q': np.diag([100, 10]),
-        'P': 100,
-        'R': 0.0001,
+        'Q': np.diag([100, 10, 100]), #PDI
+        'P': np.diag([0, 0, 0]), #TODO: INvestigate terminal cost
+        'R': 0.001,
+        'u_max': 5*VEHICLE_MASS,
+        'u_min': -8*VEHICLE_MASS,
         #TODO: Realistic Constraints
     }
 
@@ -82,61 +95,59 @@ if __name__ == "__main__":
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    pinn_model_path = os.path.join(script_dir, "../models/onnx/pinn_model_udds_10%.onnx")
-    scalerX_path = os.path.join(script_dir, "../models/scalers/scalerX_model_udds_10%.save")
-    scalerY_path = os.path.join(script_dir, "../models/scalers/scalerY_model_udds_10%.save")
+    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinn_model_udds_10%.onnx")
+    scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_model_udds_10%.save")
+    scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_model_udds_10%.save")
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
     mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
                                      scalerX_path=scalerX_path,
                                      scalerY_path=scalerY_path)
-    plant_model = SecondOrderIdeal(model_params)
-    print("Pinn model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
-    print("Pinn model time varying parameters (provided):", mpc_model.tvp.keys())
-
+    plant_model = ThirdOrderModel(model_params)
+    print("Pinn (MPC) model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
+    print("Pinn (MPC) model time varying parameters (provided):", mpc_model.tvp.keys())
+    print("Plant model control input and states:", plant_model.u.keys(), plant_model.x.keys())
+    print("Plant model time varying parameters (provided):", plant_model.tvp.keys())
+    
     platoon = []
     for i in range(0, platoon_size):
         print(f"Setting MPC for follower {i}...")
-        if i==0:
-            fn_get_prec = get_lv_state #set leader function
-        else:
-            #! not implemented
-            raise NotImplementedError("Setup for followers beyond the leader is not implemented yet.")
-        
-        mpc = setupDMPC(mpc_model, mpc_config, opt_params, fn_get_prec)
-        mpc.settings.set_linear_solver(solver_name='MA27') #boosts speed supposedly
+
+        mpc = setupDMPC(mpc_model, mpc_config, opt_params, fn_get_prec_state, platoon, i)
         print("\n", mpc.settings)
 
-        sim = setupSim(plant_model, sim_config, get_prec_state=fn_get_prec)
+        sim = setupSim(plant_model, sim_config, fn_get_prec_state, platoon, i)
         platoon.append(FV(fv_initials[i], mpc, sim)) #create follower and add to platoon
 
-    #test:
     for i, fv in enumerate(platoon):
         print(f"\n(FV{i}) Set Initial Conditions:")
-        print(str(fv.mpc.x0['x']) + "m", str(fv.mpc.x0['v']*3.6) + "km/h")
+        print(str(fv.mpc.x0['x']) + "m", str(fv.mpc.x0['v']*3.6) + "km/h") #, str(fv.sim.x0['a']) + "m/s^2")
         mpc_graphics, sim_graphics = setup_graphics(fv.mpc.data, fv.sim.data)
         fv.set_graphics(mpc_graphics, sim_graphics)
         
         
     #Control loop:
     fv0 = platoon[0]
-    fv0.mpc.settings.supress_ipopt_output()
     for i, t_value in enumerate(t):
-        u = fv0.mpc.make_step(fv0.state)
+        u = fv0.mpc.make_step(fv0.state[:-1]) #dont include acceleration  
         #!DEBUG
-        """ print(f"DEBUG: MPC state at t={t_value:.1f}")
+        print(f"DEBUG: MPC state at t={t_value:.1f}")
         mpc_x = fv0.mpc.data['_x', 'x'][-1]
         mpc_x_prec = fv0.mpc.data['_tvp', 'x_prec'][-1]
         mpc_v = fv0.mpc.data['_x', 'v'][-1]
         mpc_v_prec = fv0.mpc.data['_tvp', 'v_prec'][-1]
         mpc_gap = fv0.mpc.data['_aux', 'd'][-1]
-        
+        mpc_desired_gap = fv0.mpc.data['_aux', 'd_ref'][-1]
+
+
         print(f"  Ego position (x): {mpc_x}")
         print(f"  Ego velocity (v): {mpc_v}")
         print(f"  Preceeding position (x_prec): {mpc_x_prec}")
-        print(f"  Preceeding position (v_prec): {mpc_v_prec}")
+        print(f"  Preceeding velocity (v_prec): {mpc_v_prec}")
+        print(f"  Desired gap (d_ref): {mpc_desired_gap}")
         print(f"  Calculated gap: {mpc_x_prec - mpc_x - L_prec}", f"using {fv0.mpc.model.aux['d']}")
-        print(f"  Actual gap (d): {mpc_gap}") """
+        print(f"  Actual gap (d): {mpc_gap}")
+        print(f"  Chosen acceleration (u): {u/VEHICLE_MASS}")
 
         #* Have to do update of tvp before calling sim,
         #* for some reason simulator does all calculation before updating tvp, except for t=0 obv.
@@ -145,8 +156,8 @@ if __name__ == "__main__":
         #* because this last one was stored using the previous leader position. So the update has to be in the middle to sync the two,
         #* and eliminate the discrepancy that was causing a steady-state error. 
 
-        lv_curr_state['v'] = lv_speed(t_value) 
-        lv_curr_state['x'] += lv_curr_state['v'] * dt
+        lv_curr_state['v'] = lv_speed(t_value)
+        lv_curr_state['x'] += lv_curr_state['v']*dt
         fv0.state = fv0.sim.make_step(u)
         #!DEBUG
         """ print(f"DEBUG: Simulator state at t={t_value:.1f}")
