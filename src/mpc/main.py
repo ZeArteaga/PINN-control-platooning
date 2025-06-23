@@ -66,7 +66,7 @@ if __name__ == "__main__":
                     }
 
     mpc_config = {
-            'n_horizon': 30,
+            'n_horizon': 10,
             't_step': dt, #set equal to dt for model training
             'n_robust': 0, #for scenario based mpc -> see mpc.set_uncertainty_values()
             'store_full_solution': True,
@@ -78,9 +78,9 @@ if __name__ == "__main__":
             }
     
     opt_params = {
-        'Q': np.diag([100, 10, 100]), #PDI
+        'Q': np.diag([100, 10, 100]), #PDI [100, 10, 100]
         'P': np.diag([0, 0, 0]), #TODO: INvestigate terminal cost
-        'R': 0.001,
+        'R': 0.1,
         'u_max': 5*VEHICLE_MASS,
         'u_min': -8*VEHICLE_MASS,
         #TODO: Realistic Constraints
@@ -95,9 +95,9 @@ if __name__ == "__main__":
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinn_model_udds_10%.onnx")
-    scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_model_udds_10%.save")
-    scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_model_udds_10%.save")
+    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinnANN_udds_hwycol_nycccol_70%.onnx")
+    scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_ANN_udds_hwycol_nycccol_70%.save")
+    scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_ANN_udds_hwycol_nycccol_70%.save")
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
     mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,

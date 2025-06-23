@@ -78,7 +78,7 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
     d_ref = d_min + h*model.x['v']
     d = model.tvp['x_prec'] - model.x['x'] - L_prec
 
-    X = ca.horzcat(model.tvp['t'], model.u['u'], model.x['v'], d, d_ref) #correct order of features
+    X = ca.horzcat(model.tvp['t'], model.u['u'], model.x['v'], d, d_ref, model.tvp['v_prec']) #correct order of features
     if scalerX_path:
         scalerX = joblib.load(scalerX_path)
         target_min = scalerX.feature_range[0]
