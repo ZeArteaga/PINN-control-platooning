@@ -1,4 +1,5 @@
 import onnx
+import numpy as np
 import joblib
 import casadi as ca 
 from do_mpc.sysid import ONNXConversion
@@ -20,7 +21,7 @@ def _set_model_common_params(model, const_params: dict):
     
     return model
 
-def _apply_kinematics_define_expr(
+def policy_define_expr(
     model: Model, a, d_min, h, L_prec):
     # Discrete‐kinematics update
     x = model.x['x']
@@ -28,18 +29,10 @@ def _apply_kinematics_define_expr(
     x_prec = model.tvp['x_prec']
     v_prec = model.tvp['v_prec']
 
-    dxdt = v
-    model.set_rhs('x', dxdt)
-    #dgapdt = v_prec - v #gap
-    dvdt = a 
-    #model.set_rhs('d', dgapdt)
-    model.set_rhs('v', dvdt)
-
     d = x_prec - x - L_prec
     d_ref = d_min + h * v 
     error_spacing = d - d_ref
     de = v_prec - v - h * a
-    model.set_rhs("Ie", error_spacing) #set integral action
     Ie = model.x['Ie']
     E = ca.vertcat(error_spacing, de, Ie)
     
@@ -93,7 +86,14 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
         scalerY = joblib.load(scalerY_path)
         a = a * scalerY.scale_ + scalerY.mean_  #in this case the scaler has single values/floats
 
-    model = _apply_kinematics_define_expr(model, a, d_min, h, L_prec)
+    model = policy_define_expr(model, a, d_min, h, L_prec)
+    dxdt = model.x['v']
+    model.set_rhs('x', dxdt)
+    #dgapdt = v_prec - v #gap
+    dvdt = a 
+    #model.set_rhs('d', dgapdt)
+    model.set_rhs('v', dvdt)
+    model.set_rhs("Ie", model.aux['e']) #set integral action
     
     model.setup() #after this cannot setup more variables
     return model
@@ -106,10 +106,19 @@ def SecondOrderIdeal(const_params: dict) -> Model:
     d_min = const_params["d_min"]
     L_prec = const_params['L_prec']
     m = const_params["m"]
-    a = model.u['u'] / m
 
-    model = _apply_kinematics_define_expr(model, a, d_min, h, L_prec)
-    
+    model = policy_define_expr(model, a, d_min, h, L_prec)
+
+    dxdt = model.x['v']
+    model.set_rhs('x', dxdt)
+    #dgapdt = v_prec - v #gap
+    a_target = model.u['u'] / m
+    dvdt = a_target 
+    #model.set_rhs('d', dgapdt)
+    model.set_rhs('v', dvdt)
+
+    model.set_rhs("Ie", model.aux['e']) #set integral action
+
     model.setup()
     return model
 
@@ -119,15 +128,25 @@ def ThirdOrderModel(const_params: dict) -> Model:
     d_min = const_params["d_min"]
     L_prec = const_params['L_prec']
     tau = const_params["tau"]
-
+    m = const_params["m"]
     model = _set_model_common_params(model, const_params)
     
     a = model.set_variable('_x', 'a', shape=(1,1))
-    dadt = 1/tau*(model.u['u'] - a) 
+    a_target = model.u['u']/m
+    dadt = 1/tau*(a_target - a) 
     model.set_rhs('a', dadt)
 
-    model = _apply_kinematics_define_expr(model, a, d_min, h, L_prec)
+    model = policy_define_expr(model, a, d_min, h, L_prec)
     
+    dxdt = model.x['v']
+    model.set_rhs('x', dxdt)
+    #dgapdt = v_prec - v #gap
+    dvdt = a 
+    #model.set_rhs('d', dgapdt)
+    model.set_rhs('v', dvdt)
+
+    model.set_rhs("Ie", model.aux['e']) #set integral action
+
     model.setup()
     return model
     
