@@ -38,7 +38,6 @@ def policy_define_expr(
     
     error_rel_v = v_prec - v #for terminal cost
     terminal_vec = ca.vertcat(error_spacing, error_rel_v, Ie)
-    
 
     model.set_expression('d_ref', d_ref)
     model.set_expression('d', d)
