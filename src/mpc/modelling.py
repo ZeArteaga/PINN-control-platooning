@@ -13,7 +13,6 @@ def _set_model_common_params(model, const_params: dict):
     model.set_variable('_x', 'x', shape=(1, 1)) #assuming 1D scenario else this is isn't needed
     #model.set_variable('_x', 'd', shape=(1, 1))
     model.set_variable('_x', 'v', shape=(1, 1))
-    model.set_variable('_x', 'Ie', shape=(1, 1))
 
     model.set_variable('_tvp', 't', shape=(1, 1)) # PINN input feature
     model.set_variable('_tvp', 'x_prec', shape=(1, 1))
@@ -21,7 +20,48 @@ def _set_model_common_params(model, const_params: dict):
     
     return model
 
-def policy_define_expr(
+def _define_common_expressions(model: Model, d_min, h, L_prec):
+    """Defines expressions common to both simulator and controller for monitoring."""
+    x = model.x['x']
+    v = model.x['v']
+    x_prec = model.tvp['x_prec']
+    v_prec = model.tvp['v_prec']
+
+    d = x_prec - x - L_prec
+    d_ref = d_min + h * v
+    error_spacing = d - d_ref
+    error_rel_v = v_prec - v
+
+    model.set_expression('d_ref', d_ref)
+    model.set_expression('d', d)
+    model.set_expression('e', error_spacing)
+    model.set_expression('e_rel_v', error_rel_v)
+    return model
+
+def _define_controller_expressions(model: Model, a, h):
+    """Defines expressions specific to the MPC controller (cost function terms).
+    Asssumes common expressions havve been set (like error)"""
+
+    error_spacing = model.aux['e']
+    v_prec = model.tvp['v_prec']
+    v = model.x['v']
+
+    model.set_variable('_x', 'Ie', shape=(1, 1))
+    Ie = model.x['Ie']
+
+    de = v_prec - v - h * a # Damping term for CTH policy
+    E = ca.vertcat(error_spacing, de, Ie) # Stage cost vector
+    
+    error_rel_v = model.aux['e_rel_v'] #for terminal cost
+    terminal_vec = ca.vertcat(error_spacing, error_rel_v, Ie) # Terminal cost vector
+
+    model.set_expression('E', E)
+    model.set_expression('E_term', terminal_vec)
+
+    model.set_rhs("Ie", error_spacing)
+    return model
+
+""" def policy_define_expr(
     model: Model, a, d_min, h, L_prec):
     # Discrete‐kinematics update
     x = model.x['x']
@@ -47,7 +87,7 @@ def policy_define_expr(
     model.set_expression('E', E)
     model.set_expression('E_term', terminal_vec)
 
-    return model
+    return model """
 
 def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
                          scalerX_path: str = None, scalerY_path: str = None) -> Model: 
@@ -67,10 +107,8 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
     h = const_params["h"]
     d_min = const_params["d_min"]
     L_prec = const_params['L_prec']
-    d_ref = d_min + h*model.x['v']
-    d = model.tvp['x_prec'] - model.x['x'] - L_prec
 
-    X = ca.horzcat(model.tvp['t'], model.u['u'], model.x['v'], d, d_ref, model.tvp['v_prec']) #correct order of features
+    X = ca.horzcat(model.tvp['t'], model.u['u'], model.x['v']) #correct order of features
     if scalerX_path:
         scalerX = joblib.load(scalerX_path)
         target_min = scalerX.feature_range[0]
@@ -85,19 +123,20 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
         scalerY = joblib.load(scalerY_path)
         a = a * scalerY.scale_ + scalerY.mean_  #in this case the scaler has single values/floats
 
-    model = policy_define_expr(model, a, d_min, h, L_prec)
+    _define_common_expressions(model, d_min, h, L_prec)    
+    _define_controller_expressions(model, a, h)
+    
     dxdt = model.x['v']
     model.set_rhs('x', dxdt)
     #dgapdt = v_prec - v #gap
     dvdt = a 
     #model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
-    model.set_rhs("Ie", model.aux['e']) #set integral action
     
     model.setup() #after this cannot setup more variables
     return model
 
-def SecondOrderIdeal(const_params: dict) -> Model:
+def SecondOrderIdealPlant(const_params: dict) -> Model:
     model = Model('continuous') #can be continous or discrete
 
     model = _set_model_common_params(model, const_params)
@@ -106,22 +145,20 @@ def SecondOrderIdeal(const_params: dict) -> Model:
     L_prec = const_params['L_prec']
     m = const_params["m"]
 
-    model = policy_define_expr(model, a, d_min, h, L_prec)
+    model = _define_common_expressions(model, d_min, h, L_prec)    
 
     dxdt = model.x['v']
     model.set_rhs('x', dxdt)
     #dgapdt = v_prec - v #gap
-    a_target = model.u['u'] / m
-    dvdt = a_target 
+    a_ref = model.u['u'] / m
+    dvdt = a_ref 
     #model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
-
-    model.set_rhs("Ie", model.aux['e']) #set integral action
 
     model.setup()
     return model
 
-def ThirdOrderModel(const_params: dict) -> Model:
+def ThirdOrderPlant(const_params: dict) -> Model:
     model = Model('continuous')
     h = const_params["h"]
     d_min = const_params["d_min"]
@@ -131,12 +168,12 @@ def ThirdOrderModel(const_params: dict) -> Model:
     model = _set_model_common_params(model, const_params)
     
     a = model.set_variable('_x', 'a', shape=(1,1))
-    a_target = model.u['u']/m
-    dadt = 1/tau*(a_target - a) 
+    a_ref = model.u['u']/m
+    dadt = 1/tau*(a_ref - a) 
     model.set_rhs('a', dadt)
 
-    model = policy_define_expr(model, a, d_min, h, L_prec)
-    
+    model = _define_common_expressions(model, d_min, h, L_prec)
+
     dxdt = model.x['v']
     model.set_rhs('x', dxdt)
     #dgapdt = v_prec - v #gap
@@ -144,7 +181,6 @@ def ThirdOrderModel(const_params: dict) -> Model:
     #model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
 
-    model.set_rhs("Ie", model.aux['e']) #set integral action
 
     model.setup()
     return model

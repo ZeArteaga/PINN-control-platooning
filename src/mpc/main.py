@@ -4,22 +4,33 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 from do_mpc.simulator import Simulator
 from do_mpc.controller import MPC
-from modelling import SecondOrderPINNmodel, SecondOrderIdeal, ThirdOrderModel
+from modelling import SecondOrderPINNmodel, SecondOrderIdealPlant, ThirdOrderPlant
 from controller import setupDMPC, setupSim
 from plotting import setup_graphics, plot
 from do_mpc.data import save_results
 class FV:
-     def __init__(self, fv_initial: np.ndarray, mpc: MPC, sim: Simulator):
-        self.state = fv_initial
+    def __init__(self, sim_initial: np.ndarray, mpc_initial: np.ndarray, mpc: MPC, sim: Simulator):
+        self.state = sim_initial
         self.mpc = mpc
         self.sim = sim
-        self.mpc.x0 = fv_initial[:-1] #dont include acceleration
-        self.sim.x0 = fv_initial
+        self.mpc.x0 = mpc_initial
+        self.sim.x0 = sim_initial
         self.mpc.set_initial_guess()
-
-     def set_graphics(self, mpc_graphics, sim_graphics):
+        print(self.state)
+    def set_graphics(self, mpc_graphics, sim_graphics):
         self.mpc_graphics = mpc_graphics
         self.sim_graphics = sim_graphics
+    
+    def sim_step(self, u):
+        #reset with current plant state and fetch Ie from the previous mpc state
+        self.state = self.sim.make_step(u)
+
+    def mpc_step(self):
+        #reset with current plant states [x,v] and fetch Ie from the previous mpc state
+        #full() converts DM to np.array
+        mpc_state = np.array([self.state[0].item(), self.state[1].item(), fv0.mpc.x0['Ie'].full().item()])
+        u = self.mpc.make_step(mpc_state)
+        return u
 
 if __name__ == "__main__":
     #*CONFIG---
@@ -55,7 +66,13 @@ if __name__ == "__main__":
     #Followers
     ini_gap = L_prec + 20 
     fv_v0 = 40/3.6
-    fv_initials = [np.array([lv_x0 - ini_gap, fv_v0, 0, 0])] #x, v, 0 integral action, 0 acceleration
+    # Define separate initial states for the plant (sim) and the controller (mpc)
+    # Plant state: [x, v, a]
+    sim_initial_state = np.array([lv_x0 - ini_gap, fv_v0, 0])
+    # MPC state: [x, v, Ie]
+    mpc_initial_state = np.array([lv_x0 - ini_gap, fv_v0, 0])
+
+    fv_initials = [(sim_initial_state, mpc_initial_state)] # Store as a tuple
     platoon_size = len(fv_initials) #excluding leader
     #will use the following to instantiate various decentralized MPC for each CAV
     model_params = {'h': 1,
@@ -66,7 +83,7 @@ if __name__ == "__main__":
                     }
 
     mpc_config = {
-            'n_horizon': 10,
+            'n_horizon': 15,
             't_step': dt, #set equal to dt for model training
             'n_robust': 0, #for scenario based mpc -> see mpc.set_uncertainty_values()
             'store_full_solution': True,
@@ -78,9 +95,9 @@ if __name__ == "__main__":
             }
     
     opt_params = {
-        'Q': np.diag([100, 10, 100]), #PDI [100, 10, 100]
-        'P': np.diag([0, 0, 0]), #TODO: INvestigate terminal cost
-        'R': 0.1,
+        'Q': np.diag([1e3, 1e-1, 5e1]),
+        'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
+        'R': 1e-4,
         'u_max': 5*VEHICLE_MASS,
         'u_min': -8*VEHICLE_MASS,
         #TODO: Realistic Constraints
@@ -103,7 +120,7 @@ if __name__ == "__main__":
     mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
                                      scalerX_path=scalerX_path,
                                      scalerY_path=scalerY_path)
-    plant_model = ThirdOrderModel(model_params)
+    plant_model = ThirdOrderPlant(model_params)
     print("Pinn (MPC) model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
     print("Pinn (MPC) model time varying parameters (provided):", mpc_model.tvp.keys())
     print("Plant model control input and states:", plant_model.u.keys(), plant_model.x.keys())
@@ -117,7 +134,8 @@ if __name__ == "__main__":
         print("\n", mpc.settings)
 
         sim = setupSim(plant_model, sim_config, fn_get_prec_state, platoon, i)
-        platoon.append(FV(fv_initials[i], mpc, sim)) #create follower and add to platoon
+        sim_init, mpc_init = fv_initials[i]
+        platoon.append(FV(sim_init, mpc_init, mpc, sim)) #create follower and add to platoon
 
     for i, fv in enumerate(platoon):
         print(f"\n(FV{i}) Set Initial Conditions:")
@@ -129,7 +147,8 @@ if __name__ == "__main__":
     #Control loop:
     fv0 = platoon[0]
     for i, t_value in enumerate(t):
-        u = fv0.mpc.make_step(fv0.state[:-1]) #dont include acceleration  
+        u = fv0.mpc_step()
+
         #!DEBUG
         print(f"DEBUG: MPC state at t={t_value:.1f}")
         mpc_x = fv0.mpc.data['_x', 'x'][-1]
@@ -145,7 +164,6 @@ if __name__ == "__main__":
         print(f"  Preceeding position (x_prec): {mpc_x_prec}")
         print(f"  Preceeding velocity (v_prec): {mpc_v_prec}")
         print(f"  Desired gap (d_ref): {mpc_desired_gap}")
-        print(f"  Calculated gap: {mpc_x_prec - mpc_x - L_prec}", f"using {fv0.mpc.model.aux['d']}")
         print(f"  Actual gap (d): {mpc_gap}")
         print(f"  Chosen acceleration (u): {u/VEHICLE_MASS}")
 
@@ -158,7 +176,9 @@ if __name__ == "__main__":
 
         lv_curr_state['v'] = lv_speed(t_value)
         lv_curr_state['x'] += lv_curr_state['v']*dt
-        fv0.state = fv0.sim.make_step(u)
+
+        fv0.sim_step(u)        
+
         #!DEBUG
         """ print(f"DEBUG: Simulator state at t={t_value:.1f}")
         sim_x = fv0.sim.data['_x', 'x'][-1]
@@ -175,8 +195,4 @@ if __name__ == "__main__":
         print(f"  Actual gap (d): {sim_gap}\n") """
     
     save_results([fv0.mpc, fv0.sim], overwrite=True)
-
-    fv0.mpc_graphics.plot_predictions(t_ind=0) #Additionally exemplify predictions
-    plot(fv0.sim_graphics, name="(sim)")
-
-    plt.show()
+    plot(sim_graphics, mpc_graphics, 100)

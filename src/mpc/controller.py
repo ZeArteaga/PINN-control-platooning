@@ -29,10 +29,9 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     mpc.bounds['lower', '_x', 'v'] = v_min
     mpc.bounds['upper', '_x', 'v'] = v_max
      
-    #TODO: try to do this instead later, instead of specifying d_min in objective
-    """ #set hard safety constraint. Note: there is only an upper bound argument so need to do the negative for lower:
-    mpc.set_nl_cons('safety_dist_constraint', -model.aux['e_i'], ub=-opt_params.get('d_min', 1),
-                     soft_constraint=False)  """
+    #set hard safety constraint. Note: there is only an upper bound argument so need to do the negative for lower:
+    mpc.set_nl_cons('safety_dist_constraint', -model.aux['d'], ub=-opt_params.get('d_min', 1),
+                     soft_constraint=False)
     
     #need to define time varying parameter callback over prediction horizon
     tvp_template = mpc.get_tvp_template()
