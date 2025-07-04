@@ -115,10 +115,9 @@ def SecondOrderIdealPlant(const_params: dict) -> Model:
     dvdt = a 
     #model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
+    model = _define_expressions(model, d_min, h, L_prec, a)    
     e = model.aux['e']
     model.set_rhs("Ie", e)
-
-    model = _define_expressions(model, d_min, h, L_prec, a)    
 
     model.setup()
     return model

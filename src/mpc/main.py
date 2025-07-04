@@ -75,7 +75,7 @@ if __name__ == "__main__":
                     'd_min': 2,
                     'L_prec': 4.5,
                     'm': VEHICLE_MASS,
-                    'tau': 0.5,
+                    'tau': 0.3,
                     }
 
     mpc_config = {
@@ -91,9 +91,9 @@ if __name__ == "__main__":
             }
     
     opt_params = {
-        'Q': np.diag([1e3, 1e-1, 1e1]), 
+        'Q': np.diag([1e3, 2e-1, 5]), #[1e3, 2e-1, 5]
         'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
-        'R': 1e-3,
+        'R': 1e-4,
         'u_max': 5*VEHICLE_MASS,
         'u_min': -8*VEHICLE_MASS,
         #TODO: Realistic Constraints
