@@ -8,26 +8,13 @@ from .agents.navigation.controller import PIDLongitudinalController
 
 from do_mpc.model import Model
 
-from .Core import Simulation, Platoon
+from .Core import *
 from mpc.controller import setupDMPC
 from mpc.modelling import SecondOrderPINNmodel
 
 #*This script assumes an already active server with a picked town: 
 #* ./config.py --map Town05
 #* then in carla root run ./CarlaUE4.sh  
-
-def fn_get_prec_state(platoon, vehicle):
-    # Get index of follower in platoon
-    idx = vehicle.index
-    if idx == 0:
-        prec = platoon.lead_vehicle
-    else:
-        prec = platoon.follower_vehicles[idx - 1]
-
-    #*V2V: Get vel of preceding vehicle 
-    v_prec = prec.speed
-
-    return v_prec
 
 def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
          fn_get_prec_state, acc_cons: list, sim_dt:float=0.01, t_end:float=np.inf, 
@@ -71,7 +58,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         
         lv_sp = spawn_points[1]
         platoon = Platoon(sim)
-        lv = platoon.add_lead_vehicle(lv_bp, lv_sp)
+        lv: Vehicle = platoon.add_lead_vehicle(lv_bp, lv_sp)
         #DONT APPEND TO ACTORS LIST, THIS ONLY FOR NPCs
         print(f"Spawned LV: {lv.type_id} (id: {lv.id}) at {lv_sp.location}")
         #TODO: Modify default autopilot behavior
@@ -81,14 +68,13 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         #* SPAWN FOLLOWERS
         for i in range(0, n_followers):
             followers = platoon.get_follower_list()
-            fv = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
+            fv: Vehicle = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
                                                 else followers[-1].transform_ahead(-10, force_straight=True)))
             #*Setup controllers
             fv_mass = fv.get_physics_control().mass
             opt_params["u_max"] = acc_cons[1]*fv_mass
             opt_params["u_min"] = acc_cons[0]*fv_mass
             mpc = setupDMPC(mpc_model, mpc_config, opt_params, fn_get_prec_state, platoon, fv)
-            mpc.settings.set_linear_solver(solver_name='MA27') #boosts speed supposedly
             print(f"\n FV{i} controller settings:", mpc.settings)
             mpc.set_initial_guess()
             pid = PIDLongitudinalController(fv, dt=sim_dt,
@@ -110,36 +96,12 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 
         control_dt = mpc.settings.t_step
         control_rate = int(control_dt/sim_dt)
-        followers = platoon.get_follower_list()
-        v_refs = np.zeros(shape=len(followers),)
         while i<=step_end:
             if i % control_rate == 0:
-                #*CALCULATE PLATOON CONTROL STEP EVERY CONTROL_DT
-                a_refs: np.array = platoon.control_step()
-                for idx,fv in enumerate(followers):
-                    v_refs[idx] = fv.speed
-                    #!DEBUG
-                    print(f"gap={fv.controller.data['_aux', 'd'][-1]}, " +
-                          f"target gap={fv.controller.data['_aux', 'd_ref'][-1]} " +
-                          f"command acc={a_refs[idx]}")
-            #*..APPLY PREV CONTROL STEP COMMAND EVERY SIM_DT
-            v_refs = v_refs + a_refs*sim_dt
-            for idx,fv in enumerate(followers):
-                #!DEBUG
+                sim.run_step(platoon, "control")
+            else:
                 print(f"[t={sim_dt*i}]\n")
-                print(f"Target speed = {v_refs[idx]*3.6}")
-                control = fv.run_pid_step(v_refs[idx], debug=True) #returns current speed in km/h
-                print(control)
-                fv.apply_control(control)
-
-            #*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
-            spect_transf = platoon[-1].transform_ahead(-5, force_straight=True) #platoon[0] is leader
-            spect_transf.location.z += 3
-            spect_transf.rotation.pitch = -15
-            spect.set_transform(spect_transf)
-
-                #print(f"Step {i}: LV at {lv.get_transform()}")
-            sim.tick() #advance the simulation by one step (fixed_delta_seconds)            
+                sim.run_step(platoon)
             i += 1
 
         sim.release_synchronous()
@@ -153,7 +115,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         print("Cleaning up...")
         world = sim.get_world()
         if sim and world:
-            # Restore original settings (important to disable sync mode)
+            # Restore original settings (disable sync mode)
             print("Restoring original world settings.")
             world.apply_settings(sim.get_original_settings())
         if platoon:
@@ -178,11 +140,14 @@ if __name__ == '__main__':
     parser.add_argument("--no-render", action="store_false", help="Enable rendering")
     
     parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
-    parser.add_argument("--n-horizon", type=int, default=10, help="MPC: Prediction horizon length (steps)")
-    parser.add_argument("--Q", type=float, nargs=2, default=[100, 10], help="MPC: Q matrix diagonal (lagrange term). Usage: Q[0,0] Q[1,1]")
-    parser.add_argument("--P", type=float, default=100, help="MPC: P weight (meyer term)")
-    parser.add_argument("--R", type=float, default=1e-3, help="MPC: R weight (r-term)")
-    parser.add_argument("--a-limit", type=float, nargs=2, default=[-5, 10], help="MPC constraint (ref. acc): [a_min, a_max]")
+    parser.add_argument("--n-horizon", type=int, default=15, help="MPC: Prediction horizon length (steps)")
+    parser.add_argument("--Q", type=float, nargs=2, default=[1e4, 2], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
+    "Q[1,1] -> relative velocity error")
+    parser.add_argument("--Qu", type=float, nargs=1, default=0, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
+    "Q[1,1] -> relative velocity error")
+    parser.add_argument("--P", type=float, default=0, help="MPC: P weight (meyer term). Terminal error.")
+    parser.add_argument("--R", type=float, default=1e-6, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
+    parser.add_argument("--a-limit", type=float, nargs=2, default=[-5, 8], help="MPC constraint (ref. acc): [a_min, a_max]")
     parser.add_argument("--L_prec", type=float, default=3.876, help="Model params: Preeceding vehicle length.")
     parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
     parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")
@@ -207,24 +172,23 @@ if __name__ == '__main__':
             }
     
     opt_params = {
-        'Q': np.diag([args.Q[0], args.Q[1]]),
+        'Q': [args.Q[0], args.Q[1]],
+        'Qu': [args.Qu],
         'P': args.P,
         'R': args.R,
-        #TODO: Realistic Constraints
+        #*input (acc) constraints added inside main 
     }
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinn_model_udds_10%.onnx")
-    scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_model_udds_10%.save")
-    scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_model_udds_10%.save")
+    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinn_FC_noWindow_udds_hwycol_nycccol_70%_alpha0.5_features3.onnx")
     results_path = os.path.join(script_dir, "/results/")
 
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
     mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
-                                     scalerX_path=scalerX_path,
-                                     scalerY_path=scalerY_path)
+                                     scalerX_path=None,
+                                     scalerY_path=None)
 
     main(
         n_followers=args.n_followers,

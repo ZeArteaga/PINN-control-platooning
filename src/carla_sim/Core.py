@@ -7,7 +7,6 @@ from copy import copy
 import warnings
 from do_mpc.controller import MPC
 from .agents.navigation.controller import PIDLongitudinalController
-
 class Simulation(carla.Client):
 	"""Top level simulation class that handles the connection to Carla and executes steps of the simulation."""
 	def __init__(self, host='localhost', port=2000, world=None, large_map=True, render=True, synchronous=True, dt=0.01,
@@ -42,6 +41,7 @@ class Simulation(carla.Client):
 
 		if synchronous:
 			_settings.fixed_delta_seconds = dt
+			self.dt = dt
 			_settings.substepping = True
 			_settings.max_substep_delta_time = 0.01
 			_settings.max_substeps = round(dt/0.01) + 1
@@ -69,20 +69,46 @@ class Simulation(carla.Client):
 		"""
 		self.platoons.append(platoon)
 
-	def run_step(self, mode="control"):
-		"""Run one step of the simulation.
+	def run_step(self, platoon: Platoon, mode: str = ""):
+		"""Run one control step for a platoon or of the simulation
 
 		Args:
-			mode: "control" or "sample", low-level PID control is run in both cases, new control inputs are only computed if "sample" is passed
+			mode: "control" computes an action for the control problem (every control_dt)
+			else it applies the latest one and advances the simulation
 		"""
-		for platoon in self.platoons:
-			if mode == "sample":
-				platoon.take_measurements()
-			platoon.run_pid_step()
+		followers = platoon.get_follower_list()
+		
+		#*CALCULATE PLATOON CONTROL STEP EVERY CONTROL_DT
+		if mode == "control":
+			platoon.a_refs = platoon.control_step()
+			platoon.v_refs = np.zeros(shape=len(followers),)
+			for idx,fv in enumerate(followers):
+				platoon.v_refs[idx] = fv.speed
+				#!DEBUG
+				print(f"gap={fv.controller.data['_aux', 'd'][-1]}, " +
+				f"target gap={fv.controller.data['_aux', 'd_ref'][-1]} " +
+				f"Commanded acceleration={platoon.a_refs[idx]}")
+		
+		#*..EVERY SIM_DT:
+		for idx,fv in enumerate(followers):
+			#!DEBUG
+			print(f"Target speeds = {platoon.v_refs[idx]*3.6}")
+			control = fv.run_pid_step(platoon.v_refs[idx], debug=True) #returns current speed in km/h
+			fv.apply_control(control)
+			print(f"Low level control: \n {control}")
+		platoon.v_refs = platoon.v_refs + platoon.a_refs*self.dt
 
+		#*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
+		spect_transf = platoon[-1].transform_ahead(-5, force_straight=True) #platoon[0] is leader
+		spect_transf.location.z += 3
+		spect_transf.rotation.pitch = -15
+		self.spectator.set_transform(spect_transf)
+
+		self.tick() #advance the simulation by one step (fixed_delta_seconds) 
+			
 	def get_vehicle_blueprints(self):
 		"""Get available vehicle blueprints from Carla.
-
+ 
 		Returns:
 			Return all available Carla vehicle blueprints.
 		"""
@@ -200,13 +226,14 @@ class Platoon:
 			except Exception as e:
 				warnings.warn(f"{e}, lead vehicle") """
 		a_refs = []
+		v : Vehicle
 		for i, v in enumerate(self.follower_vehicles):
 			if i==0:
 				d = v.gap_to(self.lead_vehicle) #TODO: CAMERA INSTEAD OF GROUND TRUTH
 			else:
 				d = v.gap_to(self[i-1]) 
 			try:
-				state = np.array([d, v.speed]) #* verify correct state order
+				state = np.array([d, v.speed, v.u]) #* verify correct state order
 				a_ref = v.control_step(state)
 				a_refs.append(a_ref)
 			except Exception as e:
@@ -239,7 +266,7 @@ class Platoon:
 
 		new_platoon = Platoon(self.simulation)
 		vehicles_to_split = self[first: last + 1 - (first == 0)]
-		new_lead_controller = copy(self.lead_vehicle.controller)  # None if lead vehicle is on autopilot
+		new_lead_controller = copy(self.lead_vehicle.controller.x[''])  # None if lead vehicle is on autopilot
 
 		del self.follower_vehicles[first-1: last - (first == 0)]
 
@@ -341,6 +368,8 @@ class Vehicle:
 		self.controller = None #high level controller
 		self.pid = None #low level controller
 		self._autopilot = False
+		self.u = 0
+		self.control_dt = 0
 
 	def __lt__(self, other):
 		return self.index < other.index
@@ -355,6 +384,7 @@ class Vehicle:
 	def attach_controller(self, controller: MPC, pid: PIDLongitudinalController):
 		"""Attach a controller (e.g. FollowerController, LeadNavigator)."""
 		self.controller = controller
+		self.control_dt = controller.settings.t_step
 		self.pid = pid
 
 	def set_autopilot(self, is_autopilot, tm_port):
@@ -412,9 +442,10 @@ class Vehicle:
 	def control_step(self, state: np.ndarray):
 		"""For a follower vehicle, this method applies one control step."""
 
-		u = float(self.controller.make_step(state))
+		delta_u = self.controller.make_step(state).item()
+		self.u += delta_u * self.control_dt
 		mass = float(self.get_physics_control().mass)
-		a_ref:float = u/mass
+		a_ref = self.u/mass
 		return a_ref
 	
 	def run_pid_step(self, v_ref: float, debug: bool) -> carla.VehicleControl:
@@ -455,3 +486,12 @@ class Vehicle:
 				return ego_wpt.next(distance)[0].transform
 			else:
 				return ego_wpt.previous(-1*distance)[0].transform
+
+def fn_get_prec_state(platoon: Platoon, follower: Vehicle):
+    # Get index of follower in platoon
+	idx = follower.index #0 is the leader
+	prec = platoon[idx - 1]
+
+    #*V2V: Get vel of preceding vehicle
+	v_prec = prec.speed
+	return np.array([v_prec])
