@@ -7,6 +7,7 @@ from copy import copy
 import warnings
 from do_mpc.controller import MPC
 from .agents.navigation.controller import PIDLongitudinalController
+
 class Simulation(carla.Client):
 	"""Top level simulation class that handles the connection to Carla and executes steps of the simulation."""
 	def __init__(self, host='localhost', port=2000, world=None, large_map=True, render=True, synchronous=True, dt=0.01,
@@ -69,7 +70,7 @@ class Simulation(carla.Client):
 		"""
 		self.platoons.append(platoon)
 
-	def run_step(self, platoon: Platoon, mode: str = ""):
+	def run_step(self, platoon: 'Platoon', mode: str = ""):
 		"""Run one control step for a platoon or of the simulation
 
 		Args:
