@@ -31,7 +31,7 @@ class FV:
 
 if __name__ == "__main__":
     #*CONFIG---
-    VEHICLE_MASS = 1500
+    VEHICLE_MASS = 1284.0
     dt = 0.1
     L_prec = 4.5
     t_samp = np.array([0, 5, 10, 15, 20]) #time check points
@@ -63,9 +63,9 @@ if __name__ == "__main__":
     #Followers
     ini_gap = L_prec + 20 
     fv_v0 = 40/3.6
-    #*Plant state: [x, v, Ie, a]
+    #*Plant state: [x, v, u, a]
     sim_initial_state = np.array([lv_x0 - ini_gap, fv_v0, 0, 0])
-    #*MPC state: [x, v, Ie]
+    #*MPC state: [x, v, u]
     mpc_initial_state = np.array([lv_x0 - ini_gap, fv_v0, 0])
 
     fv_initials = [(sim_initial_state, mpc_initial_state)] # Store as a tuple
@@ -91,9 +91,10 @@ if __name__ == "__main__":
             }
     
     opt_params = {
-        'Q': np.diag([1e3, 2e-1, 5]), #[1e3, 2e-1, 5]
+        'Q': [1e4, 2], #spacing error, de/dt -> relative velocity  
+        'Qu': [0], #relative to u magnitude (input acceleration)
         'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
-        'R': 1e-4,
+        'R': 1e-6, #-> relative to du/dt (control variable)
         'u_max': 5*VEHICLE_MASS,
         'u_min': -8*VEHICLE_MASS,
         #TODO: Realistic Constraints
@@ -110,16 +111,16 @@ if __name__ == "__main__":
 
     pinn_model_path = os.path.join(script_dir, "../../models/onnx/" \
     "pinn_FC_noWindow_udds_hwycol_nycccol_70%_alpha0.5_features3.onnx")
-    scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_" \
+    """ scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_" \
     "FC_noWindow_udds_hwycol_nycccol_70%.save")
     scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_" \
-    "FC_noWindow_udds_hwycol_nycccol_70%.save")
+    "FC_noWindow_udds_hwycol_nycccol_70%.save") """
     
     # Building platoon...
     #same model for every vehicle (homogeneous platoon)
     mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
-                                     scalerX_path=scalerX_path,
-                                     scalerY_path=scalerY_path)
+                                     scalerX_path=None,
+                                     scalerY_path=None)
     plant_model = ThirdOrderPlant(model_params)
     print("Pinn (MPC) model control input and states:", mpc_model.u.keys(), mpc_model.x.keys())
     print("Pinn (MPC) model time varying parameters (provided):", mpc_model.tvp.keys())
@@ -147,7 +148,7 @@ if __name__ == "__main__":
     #Control loop:
     fv0 = platoon[0]
     for i, t_value in enumerate(t):
-        u = fv0.mpc_step()
+        du = fv0.mpc_step()
 
         #!DEBUG
         print(f"DEBUG: MPC state at t={t_value:.1f}")
@@ -157,7 +158,7 @@ if __name__ == "__main__":
         mpc_v_prec = fv0.mpc.data['_tvp', 'v_prec'][-1]
         mpc_gap = fv0.mpc.data['_aux', 'd'][-1]
         mpc_desired_gap = fv0.mpc.data['_aux', 'd_ref'][-1]
-        mpc_ie = fv0.mpc.data['_x', 'Ie'][-1]
+        u = fv0.mpc.data['_x', 'u'][-1]
 
         print(f"  Ego position (x): {mpc_x}")
         print(f"  Ego velocity (v): {mpc_v}")
@@ -166,7 +167,6 @@ if __name__ == "__main__":
         print(f"  Desired gap (d_ref): {mpc_desired_gap}")
         print(f"  Actual gap (d): {mpc_gap}")
         print(f"  Gap error (d - d_ref): {mpc_gap - mpc_desired_gap}")
-        print(f"  Integral error (Ie): {mpc_ie}")
         print(f"  Chosen acceleration (u): {u/VEHICLE_MASS}")
 
         #* Have to do update of tvp before calling sim,
@@ -179,7 +179,7 @@ if __name__ == "__main__":
         lv_curr_state['v'] = lv_speed(t_value)
         lv_curr_state['x'] += lv_curr_state['v']*dt
 
-        fv0.sim_step(u)        
+        fv0.sim_step(du)        
 
         #!DEBUG
         """ print(f"DEBUG: Simulator state at t={t_value:.1f}")

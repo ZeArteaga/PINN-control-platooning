@@ -10,19 +10,21 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
 
     error_vec = model.aux['E']
     terminal_vec = model.aux['E_term']
-    Q = opt_params['Q']
+    Q: list = opt_params['Q']
+    Qu: list = opt_params['Qu']
     P = opt_params['P']
-    R = opt_params['R'] 
-    lterm = error_vec.T @ Q @ error_vec  #*LAGRANGE/ERROR PENALTY
+    R = opt_params['R']
+    W = np.diag(Q+Qu) 
+    lterm = error_vec.T @ W @ error_vec  #*LAGRANGE/ERROR PENALTY
     mterm = terminal_vec.T @ P @ terminal_vec  #*TERMINAL COST 
     mpc.set_objective(lterm=lterm, mterm=mterm) #, mterm=mterm)
-    mpc.set_rterm(u=R) #*ACTUATOR PENALTY
+    mpc.set_rterm(delta_u=R) #*ACTUATOR PENALTY
 
     #*BOUNDS/CONSTRAINTS -> simple bound for output acc but could define non-linear one
     u_min = opt_params.get('u_min', -np.inf)
     u_max = opt_params.get('u_max', np.inf)
-    mpc.bounds['lower', '_u', 'u'] = u_min
-    mpc.bounds['upper', '_u', 'u'] = u_max
+    mpc.bounds['lower', '_x', 'u'] = u_min
+    mpc.bounds['upper', '_x', 'u'] = u_max
 
     v_min = opt_params.get('v_min', 0.0)
     v_max = opt_params.get('v_max', 120/3.6) # e.g., max velocity

@@ -19,7 +19,7 @@ def setup_plot(g: Graphics, ax: plt.axes, with_label: bool=True):
         'x': 'C0', 'x_prec': 'C1',
         'd_ref': 'C1', 'd': 'C2', 'e': 'C3',
         'v': 'C4', 'v_prec': 'C5',
-        'u': 'C6'
+        'u': 'C6', 'delta_u': 'C6'
     }
 
     g.add_line(var_type='_x', var_name='x', axis=ax[0], label=label("x_i"), color=colors['x'])
@@ -32,8 +32,8 @@ def setup_plot(g: Graphics, ax: plt.axes, with_label: bool=True):
     g.add_line(var_type='_x', var_name='v', axis=ax[2], label=label("v_i"), color=colors['v'])
     g.add_line(var_type='_tvp', var_name='v_prec', axis=ax[2], label=label("v_i-1"), color=colors['v_prec'])
 
-    g.add_line(var_type='_u', var_name='u', axis=ax[3], label=label("input u - Thrust/Brake (N)"), color=colors['u'])
-
+    g.add_line(var_type='_x', var_name='u', axis=ax[3], label=label("input u - Thrust/Brake (N)"), color=colors['u'])
+    
     ax[0].set_ylabel('Position (m)')
     ax[1].set_ylabel('(m)')
     ax[2].set_ylabel('Velocity (m/s)')
