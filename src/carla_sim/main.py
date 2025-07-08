@@ -1,5 +1,6 @@
 import argparse
 import random
+import pickle
 import time 
 import numpy as np
 import os
@@ -7,14 +8,16 @@ import carla
 from .agents.navigation.controller import PIDLongitudinalController
 
 from do_mpc.model import Model
+from do_mpc.data import save_results, Data
 
 from .Core import *
 from mpc.controller import setupDMPC
 from mpc.modelling import SecondOrderPINNmodel
+from mpc.utils import from_mpc_data_to_dict
 
 #*This script assumes an already active server with a picked town: 
 #* ./config.py --map Town05
-#* then in carla root run ./CarlaUE4.sh  
+#* then in carla root run ./CarlaUE4.sh (optionally: --quality -low-quality)
 
 def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
          fn_get_prec_state, acc_cons: list, sim_dt:float=0.01, t_end:float=np.inf, 
@@ -31,7 +34,6 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 		"""
     
     actor_list = []
-    sim = None
     SEED = 31
 
     try:
@@ -61,9 +63,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         lv: Vehicle = platoon.add_lead_vehicle(lv_bp, lv_sp)
         #DONT APPEND TO ACTORS LIST, THIS ONLY FOR NPCs
         print(f"Spawned LV: {lv.type_id} (id: {lv.id}) at {lv_sp.location}")
-        #TODO: Modify default autopilot behavior
         sim.tick()
-        lv.set_autopilot(True, tm_port)
 
         #* SPAWN FOLLOWERS
         for i in range(0, n_followers):
@@ -78,16 +78,18 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             print(f"\n FV{i} controller settings:", mpc.settings)
             mpc.set_initial_guess()
             pid = PIDLongitudinalController(fv, dt=sim_dt,
-                                             K_P=10, K_I=0.05, K_D=5)
+                                             K_P=8, K_I=0.6, K_D=0.5)
             fv.attach_controller(mpc, pid)
-
-            sim.tick()
-            sim.tick()
-            
             print(f"Spawned FV: {fv.type_id} (id: {fv.id})")
-        
+            sim.tick()
+            sim.tick()
+
         #*SIMULATING
         print("Running simulation loop...")
+        for _ in range(0, int(5/sim_dt)):
+                sim.tick() #tick 5 seconds until the spawned vehicles stabilize
+        
+        lv.set_autopilot(True, tm_port) #TODO: Modify default autopilot behavior
         i:int = 0
         if t_end != np.inf: 
             step_end = int(t_end/sim_dt)
@@ -97,10 +99,10 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         control_dt = mpc.settings.t_step
         control_rate = int(control_dt/sim_dt)
         while i<=step_end:
+            print(f"[t={sim_dt*i}]\n")
             if i % control_rate == 0:
-                sim.run_step(platoon, "control")
+                sim.run_step(platoon, "control", control_dt)
             else:
-                print(f"[t={sim_dt*i}]\n")
                 sim.run_step(platoon)
             i += 1
 
@@ -112,13 +114,33 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         print(f"An error occurred: {e}")
     finally:
         print("Simulation finished.")
+        
+        #*Save data
+        if 'platoon' in locals() and len(platoon) > 0:
+            results_dir = os.path.join(os.path.dirname(__file__), 'results/')
+            follower: Vehicle
+            for i, follower in enumerate(platoon.get_follower_list()):
+                path = os.path.join(results_dir, f"follower_{i}.pkl")
+                #add time manually so that do_mpc plotting works
+                n_points = len(follower.controller.data['_x', 'v'])
+                time_arr = (np.arange(n_points) * control_dt).reshape(-1, 1)
+                #mpc_dict = follower.controller.data.export() #! not working correctly
+                mpc_dict = {}
+                mpc_dict['_time'] = time_arr #add time entry
+                mpc_dict = from_mpc_data_to_dict(mpc_dict, follower.controller, ['aux', 'tvp', 'x', 'u'])
+                
+                with open(path, 'wb') as f:
+                    pickle.dump(mpc_dict, f)
+                print(f"Saved data for follower {i} to {results_dir}")
+
         print("Cleaning up...")
-        world = sim.get_world()
-        if sim and world:
+        if 'sim' in locals():
+            world = sim.get_world()
+            if world:
             # Restore original settings (disable sync mode)
-            print("Restoring original world settings.")
-            world.apply_settings(sim.get_original_settings())
-        if platoon:
+                print("Restoring original world settings.")
+                world.apply_settings(sim.get_original_settings())
+        if 'platoon' in locals() and len(platoon) > 0:
             sim.apply_batch([carla.command.DestroyActor(v.id) for v in platoon])
             print(f"Destroying platoon with {len(platoon)} vehicles.")
         if actor_list:
@@ -158,8 +180,7 @@ if __name__ == '__main__':
     model_params = {'h': args.h,
                     'd_min': args.d_min,
                     'L_prec': args.L_prec}
-
-
+    
     mpc_config = {
             'n_horizon': args.n_horizon,
             't_step': args.control_rate * args.sim_dt,
@@ -168,7 +189,8 @@ if __name__ == '__main__':
             'collocation_deg': 2, #default 2nd-degree polynomial 
             #to approximate the state trajectories
             'collocation_ni': 1, #default
-            'nlpsol_opts': {'ipopt.linear_solver': 'MA27'}
+            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',
+                            'ipopt.print_level':0, 'print_time':0}
             }
     
     opt_params = {
