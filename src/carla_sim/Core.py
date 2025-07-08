@@ -70,7 +70,7 @@ class Simulation(carla.Client):
 		"""
 		self.platoons.append(platoon)
 
-	def run_step(self, platoon: 'Platoon', mode: str = ""):
+	def run_step(self, platoon: 'Platoon', mode: str = "", control_dt: float = 0.1):
 		"""Run one control step for a platoon or of the simulation
 
 		Args:
@@ -84,20 +84,20 @@ class Simulation(carla.Client):
 			platoon.a_refs = platoon.control_step()
 			platoon.v_refs = np.zeros(shape=len(followers),)
 			for idx,fv in enumerate(followers):
-				platoon.v_refs[idx] = fv.speed
+				#*target speed in km/h for PID
+				platoon.v_refs[idx] = (fv.speed + platoon.a_refs[idx]*control_dt)*3.6
 				#!DEBUG
-				print(f"gap={fv.controller.data['_aux', 'd'][-1]}, " +
-				f"target gap={fv.controller.data['_aux', 'd_ref'][-1]} " +
-				f"Commanded acceleration={platoon.a_refs[idx]}")
+				print(f"gap={fv.controller.data['_aux', 'd'][-1]}")
+				print(f"target gap={fv.controller.data['_aux', 'd_ref'][-1]}")
+				print(f"Commanded acceleration={platoon.a_refs[idx]}")
 		
 		#*..EVERY SIM_DT:
 		for idx,fv in enumerate(followers):
 			#!DEBUG
-			print(f"Target speeds = {platoon.v_refs[idx]*3.6}")
+			print(f"Target speeds = {platoon.v_refs[idx]}")
 			control = fv.run_pid_step(platoon.v_refs[idx], debug=True) #returns current speed in km/h
 			fv.apply_control(control)
-			print(f"Low level control: \n {control}")
-		platoon.v_refs = platoon.v_refs + platoon.a_refs*self.dt
+			#print(f"Low level control: \n {control}")
 
 		#*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
 		spect_transf = platoon[-1].transform_ahead(-5, force_straight=True) #platoon[0] is leader
