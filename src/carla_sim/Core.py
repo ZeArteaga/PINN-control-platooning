@@ -70,42 +70,50 @@ class Simulation(carla.Client):
 		"""
 		self.platoons.append(platoon)
 
-	def run_step(self, platoon: 'Platoon', mode: str = "", control_dt: float = 0.1):
-		"""Run one control step for a platoon or of the simulation
-
+	def compute_control_step(self, platoon: 'Platoon', control_dt: float = 0.1):
+		"""Compute MPC control step for the platoon (high-level control)
+		
 		Args:
-			mode: "control" computes an action for the control problem (every control_dt)
-			else it applies the latest one and advances the simulation
+			platoon: The platoon to compute control for
+			control_dt: Control time step
 		"""
 		followers = platoon.get_follower_list()
 		
-		#*CALCULATE PLATOON CONTROL STEP EVERY CONTROL_DT
-		if mode == "control":
-			platoon.a_refs = platoon.control_step()
-			platoon.v_refs = np.zeros(shape=len(followers),)
-			for idx,fv in enumerate(followers):
-				#*target speed in km/h for PID
-				platoon.v_refs[idx] = (fv.speed + platoon.a_refs[idx]*control_dt)*3.6
-				#!DEBUG
-				print(f"gap={fv.controller.data['_aux', 'd'][-1]}")
-				print(f"target gap={fv.controller.data['_aux', 'd_ref'][-1]}")
-				print(f"Commanded acceleration={platoon.a_refs[idx]}")
+		platoon.a_refs = platoon.control_step()
+		platoon.v_refs = np.zeros(shape=len(followers),)
 		
-		#*..EVERY SIM_DT:
-		for idx,fv in enumerate(followers):
+		for idx, fv in enumerate(followers):
+			# Convert acceleration to target speed in km/h for PID
+			platoon.v_refs[idx] = (fv.speed + platoon.a_refs[idx] * control_dt) * 3.6
+			#!DEBUG
+			print(f"gap={fv.controller.data['_aux', 'd'][-1]}")
+			print(f"target gap={fv.controller.data['_aux', 'd_ref'][-1]}")
+			print(f"Commanded acceleration={platoon.a_refs[idx]}")
+	
+	def apply_control_step(self, platoon: 'Platoon'):
+		"""Apply low-level control to all follower vehicles in the platoon
+		
+		Args:
+			platoon: The platoon to apply control to
+		"""
+		followers = platoon.get_follower_list()
+		
+		for idx, fv in enumerate(followers):
 			#!DEBUG
 			print(f"Target speeds = {platoon.v_refs[idx]}")
-			control = fv.run_pid_step(platoon.v_refs[idx], debug=True) #returns current speed in km/h
+			control = fv.run_pid_step(platoon.v_refs[idx], debug=True)
 			fv.apply_control(control)
-			#print(f"Low level control: \n {control}")
-
-		#*PLACING SPECTATOR TO FRAME SPAWNED VEHICLES
-		spect_transf = platoon[-1].transform_ahead(-5, force_straight=True) #platoon[0] is leader
+	
+	def update_spectator(self, platoon: 'Platoon'):
+		"""Update spectator camera to follow the platoon
+		
+		Args:
+			platoon: The platoon to follow
+		"""
+		spect_transf = platoon[-1].transform_ahead(-5, force_straight=True)  # platoon[0] is leader
 		spect_transf.location.z += 3
 		spect_transf.rotation.pitch = -15
 		self.spectator.set_transform(spect_transf)
-
-		self.tick() #advance the simulation by one step (fixed_delta_seconds) 
 			
 	def get_vehicle_blueprints(self):
 		"""Get available vehicle blueprints from Carla.
@@ -153,6 +161,10 @@ class Platoon:
 		self.follower_vehicles = []
 		self.simulation = simulation
 		self.simulation.add_platoon(self)
+		
+		# Control references
+		self.a_refs = np.array([])  # Acceleration references from MPC
+		self.v_refs = np.array([])  # Velocity references for PID controllers
 
 	def __getitem__(self, item):
 		all_vehicles = [self.lead_vehicle] + self.follower_vehicles
@@ -230,7 +242,7 @@ class Platoon:
 		v : Vehicle
 		for i, v in enumerate(self.follower_vehicles):
 			if i==0:
-				d = v.gap_to(self.lead_vehicle) #TODO: CAMERA INSTEAD OF GROUND TRUTH
+				d = v.gap_to(self.lead_vehicle) 
 			else:
 				d = v.gap_to(self[i-1]) 
 			try:
@@ -428,17 +440,26 @@ class Vehicle:
 
 	def gap_to(self, other):
 		"""Bumper-to-bumper distance to another vehicle.
+		
+		Calculates the distance from the front of this vehicle (self) 
+		to the rear of the other vehicle (assuming other is ahead).
 
 		Args:
-			other: the other vehicle.
+			other: the other vehicle (should be ahead of this vehicle).
 		"""
-		self_len = self.bounding_box.extent.x
-		self_fb = self.transform_ahead(self_len/2, force_straight=True).location #in world coords: center of geometry + len/2,
+		#extent is "Vector from the center of the box to one vertex. 
+		# The value in each axis equals half the size of the box for that axis. 
+		# extent.x * 2 would return the size of the box in the X-axis"
+		self_len = self.bounding_box.extent.x*2
+		other_len = other.bounding_box.extent.x*2
 		
-		other_len = other.bounding_box.extent.x
-		other_bb = other.transform_ahead(-other_len/2, force_straight=True).location			   
-
-		return self_fb.distance(other_bb)
+		self_front = self.transform_ahead(self_len/2, force_straight=True).location
+		
+		other_rear = other.transform_ahead(-other_len/2, force_straight=True).location
+		
+		gap = self_front.distance(other_rear)
+		
+		return gap
 
 	def control_step(self, state: np.ndarray):
 		"""For a follower vehicle, this method applies one control step."""
@@ -473,9 +494,8 @@ class Vehicle:
 			x = ego_transform.location.x
 			y = ego_transform.location.y
 			z = ego_transform.location.z
-			pitch = np.deg2rad(ego_transform.rotation.pitch)
-			yaw = np.deg2rad(ego_transform.rotation.yaw)
-
+			pitch = np.radians(ego_transform.rotation.pitch)
+			yaw = np.radians(ego_transform.rotation.yaw)
 			x = x + np.cos(yaw) * np.cos(pitch) * distance
 			y = y + np.sin(yaw) * np.cos(pitch) * distance
 			z = z + np.sin(pitch) * distance

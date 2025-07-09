@@ -34,7 +34,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 		"""
     
     actor_list = []
-    SEED = 31
+    SEED = 4
 
     try:
         #*GET CLIENT, WORLD, TRAFFIC MANAGER
@@ -101,9 +101,10 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         while i<=step_end:
             print(f"[t={sim_dt*i}]\n")
             if i % control_rate == 0:
-                sim.run_step(platoon, "control", control_dt)
-            else:
-                sim.run_step(platoon)
+                sim.compute_control_step(platoon, control_dt)
+            sim.apply_control_step(platoon)
+            sim.update_spectator(platoon)
+            sim.tick()
             i += 1
 
         sim.release_synchronous()
@@ -163,7 +164,7 @@ if __name__ == '__main__':
     
     parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
     parser.add_argument("--n-horizon", type=int, default=15, help="MPC: Prediction horizon length (steps)")
-    parser.add_argument("--Q", type=float, nargs=2, default=[1e4, 2], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
+    parser.add_argument("--Q", type=float, nargs=2, default=[5e4, 4], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
     "Q[1,1] -> relative velocity error")
     parser.add_argument("--Qu", type=float, nargs=1, default=0, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
     "Q[1,1] -> relative velocity error")
