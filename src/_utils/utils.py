@@ -28,15 +28,16 @@ def save_trajectory_plot(data: dict, path: str, traj_id: str) -> pd.DataFrame:
     df.to_csv(path, index=False)
     print(f"Saved CACC trajectory {traj_id} to {path}")
 
-
     cmap = plt.get_cmap('tab10')
     colors = [cmap(i) for i in range(10)]
     fig, axs = plt.subplots(2, 2, figsize=(16, 9))
     fig.suptitle(f"CACC Follower/Leader Simulation: {traj_id}", fontsize=20)
 
     # 1. Vehicle Positions
-    axs[0, 0].plot(df['t'], df['fv0_x'], label='Follower Position (m)', color=colors[0])
-    axs[0, 0].plot(df['t'], df['lv_x'], label='Leader Position (m)', color=colors[1])
+    if 'fv0_x' in df:
+        axs[0, 0].plot(df['t'], df['fv0_x'], label='Follower Position (m)', color=colors[0])
+    if 'lv_x' in df:
+        axs[0, 0].plot(df['t'], df['lv_x'], label='Leader Position (m)', color=colors[1])
     axs[0, 0].set_title("Vehicle Positions")
     axs[0, 0].set_xlabel("Time (s)")
     axs[0, 0].set_ylabel("Position (m)")
@@ -44,10 +45,10 @@ def save_trajectory_plot(data: dict, path: str, traj_id: str) -> pd.DataFrame:
     axs[0, 0].grid()
 
     # 2. Vehicle Velocities
-    axs[0, 1].plot(df['t'], df['fv0_v'] * 3.6, label='Follower Velocity (km/h)', color=colors[0])
-    axs[0, 1].plot(df['t'], df['lv_v'] * 3.6, label='Leader Velocity (km/h)', color=colors[1])
-    if 'fv0_v_noise' in df:
-        axs[0, 1].scatter(df['t'], df['fv0_v_noise'] * 3.6, label='Follower Noisy Velocity (km/h)', color=colors[2], marker='x', s=1)
+    if 'fv0_v' in df:
+        axs[0, 1].plot(df['t'], df['fv0_v'] * 3.6, label='Follower Noisy Velocity (km/h)', color=colors[0])
+    if 'lv_v':
+        axs[0, 1].plot(df['t'], df['lv_v'] * 3.6, label='Leader Velocity (km/h)', color=colors[1])
     if 'lv_v_noise' in df:
         axs[0, 1].scatter(df['t'], df['lv_v_noise'] * 3.6, label='Leader Noisy Velocity (km/h)', color=colors[3], marker='x', s=1)
     axs[0, 1].set_title("Vehicle Velocities")

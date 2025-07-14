@@ -25,6 +25,6 @@ SIM_PARAMS:
     kd: 0.9
     ki: 0.2    
     noise_std:
-        d: 0.05
+        x: 0.05
         v: 0.02
         a: 0.01
