@@ -5,19 +5,26 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 from _utils.load_driving_cycle import load_driving_cycle
-from _utils.utils import save_trajectory_plot, calc_req_input_from_acc, load_yaml_file
-    
+from _utils.utils import save_trajectory_plot, second_order_model, load_yaml_file
 
-def gen_cacc_fv(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params, noise:bool = False):
+#TODO: NOISE IMPLEMENTATION NOT WORKING
+
+def apply_control(kp: float, kd: float, ki: float, e: float,
+          e_int:float, v_prec: float, v: float, phy_params: dict, noise: float):
+    m = phy_params['m']
+    u = (kp*e + kd*(v_prec-v) + ki*e_int + noise)*m #input force + actuator noise
+    #being conservative here since this is output acc constraint
+    u_clipped = np.clip(u, phy_params['a_min']*m, phy_params['a_max']*m) 
+    a_output = second_order_model(v, u_clipped, phy_params)
+    return u_clipped, a_output
+
+def gen_cacc_fv(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params, noise:bool|tuple):
     h = sim_params["h"]
     d_min = sim_params["d_min"]
     kp = sim_params["kp"]
     kd = sim_params["kd"]
     ki = sim_params["ki"]
-    a_max = phy_params["a_max"]
-    a_min = phy_params["a_min"]
-
-    # noise is now a tuple of (noise_x, noise_v, noise_a, t_sim) or False
+    
     if noise is False:
         noise_x = 0.0
         noise_v = 0.0
@@ -30,19 +37,31 @@ def gen_cacc_fv(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params, noise:bool =
         noise_v = noise_v[idx]
         noise_a = noise_a[idx]
 
-    x = y[0] + noise_x
-    v = y[1] + noise_v
+    #policy parameters depend on noisy measurements
+    x_noise = y[0] + noise_x
+    v_noise = y[1] + noise_v
     e_int = y[2]
     x_prec = fn_x_prec(t) + noise_x
     v_prec = fn_v_prec(t) + noise_v
 
-    d_target = d_min + h*v
-    d = x_prec - x
+    d_target = d_min + h*v_noise
+    d = x_prec - x_noise
     e = d - d_target
-    a_target = kp*e + kd*(v_prec-v) * ki*e_int + noise_a
-    a_clipped = np.clip(a_target, a_min, a_max)
+    
+    #but here the plant needs a ground truth speed to apply physics 
+    u, a_output = apply_control(kp=kp, kd=kd, ki=ki, e=e, e_int=e_int, v_prec=v_prec,
+                                v=y[1], phy_params=phy_params, noise=0)
+    ret = {'u': u, 'a_output': a_output, 'e': e, 'e_int': e_int, 
+           'x': y[0], 'v': y[1], 'x_prec': x_prec, 'v_prec': v_prec,
+           'd': d, 'd_ref': d_target}
+    return ret
 
-    return np.array([v, a_clipped, e]) #dxdt, dvdt
+def integrate(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params, noise:bool|tuple):
+    '''
+    Serves as an interface for solve_ivp(). gen_cacc_fv() retuns all necessary variables
+    '''
+    ret = gen_cacc_fv(t, y, fn_x_prec, fn_v_prec, sim_params, phy_params, noise)
+    return np.array([ret['v'], ret['a_output'], ret['e']]) #dxdt, dvdt, integral action
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simulate a follower vehicle using CACC.")
@@ -78,45 +97,47 @@ if __name__ == "__main__":
 
     # Simulate with fixed noise sequence
     ret = solve_ivp(
-        gen_cacc_fv,
+        integrate,
         t_span=(t_sim[0], t_sim[-1]),
         y0=fv_X0,
         t_eval=t_sim,
-        args=(fn_leader_x, fn_leader_v, SIM_PARAMS, PHYSICS_PARAMS, (noise_x, noise_v, noise_a, t_sim))
+        args=(fn_leader_x, fn_leader_v, SIM_PARAMS, PHYSICS_PARAMS, False) #TODO: NOISE 
     )
     print(f"[Follower Trajectory {traj_id}] {ret.message}")
 
-    # Recompute acceleration (a_true) to store it for labels, but also v_true
-    a_true = []
-    for i in range(len(ret.t)):
-        t = ret.t[i]
-        y = ret.y[:, i]
-        # Use zero noise for true acceleration
-        _, a, _ = gen_cacc_fv(
-            t, y, fn_leader_x, fn_leader_v, SIM_PARAMS, PHYSICS_PARAMS, False
+    reconstructed_steps = [
+        gen_cacc_fv(
+            t_step, 
+            ret.y[:, i], 
+            fn_leader_x, 
+            fn_leader_v, 
+            SIM_PARAMS, 
+            PHYSICS_PARAMS, 
+            False # No noise for reconstruction 
         )
-        a_true.append(a)
-    a_true = np.array(a_true)
+        for i, t_step in enumerate(ret.t)
+    ]
 
-    fvo_x_sim = ret.y[0,:]
-    fv0_v_sim = ret.y[1,:]
-    lv_x_sim = fn_leader_x(ret.t) + noise_x
-    lv_v_sim =  fn_leader_v(ret.t) + noise_v
-    d_sim = lv_x_sim - fvo_x_sim
-    d_target_sim = SIM_PARAMS["d_min"] + SIM_PARAMS["h"]*fv0_v_sim
-    a_ref = calc_req_input_from_acc(ret.y[1,:], a_true, PHYSICS_PARAMS)
+    df_results = pd.DataFrame(reconstructed_steps)
 
     data = {
         't': ret.t,
-        'fv0_x': fvo_x_sim,
-        'fv0_v': fv0_v_sim,
-        'fv0_u': a_ref, #required input (acc reference)
-        'fv0_a': a_true, #output acceleration (true)
-        'lv_x': lv_x_sim,
-        'lv_v': lv_v_sim,
-        'd_fv0_lv': d_sim,
-        'd*_fv0_lv': d_target_sim,
+        'fv0_x_noise': ret.y[0, :] + noise_x, #!DEBUG:adding a posteriori for now
+        'fv0_v_noise': ret.y[1, :] + noise_v,
+        'fv0_x': df_results['x'].to_numpy(),
+        'fv0_v': df_results['v'].to_numpy(),
+        'fv0_u': df_results['u'].to_numpy(),
+        'fv0_a': df_results['a_output'].to_numpy(),
+        'fv0_a_noise': df_results['a_output'].to_numpy() + noise_a,
+        'lv_x': df_results['x_prec'].to_numpy(),
+        'lv_v': df_results['v_prec'].to_numpy(),
+        'd_fv0_lv': df_results['d'].to_numpy(),
+        'd*_fv0_lv': df_results['d_ref'].to_numpy(),
     }
-
-    save_trajectory_plot(data, f"../data/driving_cycles/CACC_{traj_id}.csv", traj_id)
+    
+    # Also compute the equivalent input acceleration from u
+    data['fv0_a_ref'] = data['fv0_u'] / PHYSICS_PARAMS['m']
+    figpath = f'../data/driving_cycles/figs/CACC_{traj_id}_kp{SIM_PARAMS["kp"]}_ki{SIM_PARAMS["ki"]}_kd{SIM_PARAMS["kd"]}'
+    csvpath = f'../data/driving_cycles/CACC_{traj_id}_kp{SIM_PARAMS["kp"]}_ki{SIM_PARAMS["ki"]}_kd{SIM_PARAMS["kd"]}'
+    save_trajectory_plot(data, csvpath, figpath, traj_id)
 

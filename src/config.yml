@@ -13,7 +13,7 @@ PHYSICS_PARAMS:
     c1: 2.0e-4  # rolling resistance speed-dependent coefficient
     road_grade: 0.0199973 #np.arctan(2/100) - radians (x% slope)
     v_max: 38.888 #140/3.6
-    a_max: 4.208 #(100/3.6)/6.6 m/s^2 using max acc aprox from 0-100 in 6.6s -> 4.63
+    a_max: 4.209 #(100/3.6)/6.6 m/s^2 using max acc aprox from 0-100 in 6.6s -> 4.209
     a_min: -8.0 # max breaking acc
 
 SIM_PARAMS:
@@ -22,9 +22,9 @@ SIM_PARAMS:
     d_min: 2.0 #m gap when stopped (safe gap)
     d_ini: 20.0
     kp: 7
-    kd: 0.9
-    ki: 0.2    
+    kd: 1
+    ki: 0.5    
     noise_std:
-        x: 0.05
-        v: 0.02
-        a: 0.01
+        x: 0.2
+        v: 0.1
+        a: 0.05
