@@ -76,9 +76,9 @@ for traj_id in results_df["trajectory"].unique():
     if not punn_df.empty:
         ax1.axhline(float(punn_df["mse_a"].iloc[0]), color="red", linestyle="--", label="PUNN MSE")
         ax1.scatter([1], [float(punn_df["mse_a"].iloc[0])], color="red", label="PUNN MSE (point)")
-    ax1.set_xlabel("alpha (data weight)")
+    ax1.set_xlabel("$\\alpha$")
     ax1.set_ylabel("MSE")
-    ax1.set_title(f"MSE vs alpha for {traj_id}")
+    ax1.set_title(f"MSE")
     ax1.legend()
     ax1.grid(True)
 
@@ -87,9 +87,9 @@ for traj_id in results_df["trajectory"].unique():
     if not punn_df.empty:
         ax2.axhline(float(punn_df["mae_a"].iloc[0]), color="red", linestyle="--", label="PUNN MAE")
         ax2.scatter([1], [float(punn_df["mae_a"].iloc[0])], color="red", label="PUNN MAE (point)")
-    ax2.set_xlabel("alpha (data weight)")
+    ax1.set_xlabel("$\\alpha$")
     ax2.set_ylabel("MAE")
-    ax2.set_title(f"MAE vs alpha for {traj_id}")
+    ax2.set_title(f"MAE")
     ax2.legend()
     ax2.grid(True)
 

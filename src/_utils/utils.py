@@ -7,7 +7,7 @@ def load_yaml_file(path: str):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
-def second_order_model(v: float, u: float, params: dict) -> np.ndarray:
+def second_order_model(v: float, u: float, params: dict) -> float:
     c0 = params["c0"]
     c1 = params["c1"]
     m = params["m"]
