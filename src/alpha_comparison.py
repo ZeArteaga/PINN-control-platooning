@@ -59,42 +59,45 @@ for cycle_file in cycle_files:
         })
 
 results_df = pd.DataFrame(results)
-print(results_df)
 
-# Plotting
+# Plot all MSE curves for all trajectories in one plot
+import itertools
+markers = itertools.cycle(['o', 's', '^', 'D', 'v', '>', '<', 'p', '*', 'h', 'x'])
+colors = itertools.cycle(plt.cm.tab10.colors)
 
-# Plotting (PUNN as a point, PINN as a curve)
-for traj_id in results_df["trajectory"].unique():
-    df_traj = results_df[results_df["trajectory"] == traj_id]
-    pinn_df = df_traj[df_traj["model"] != "PUNN"].sort_values("alpha")
-    punn_df = df_traj[df_traj["model"] == "PUNN"]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+fig, ax = plt.subplots(figsize=(10, 7))
+test_trajs = ["us06", "profile_0", "profile_1", "profile_2", "profile_3"]
+for traj_id in test_trajs:
+    # Find matching trajectory by substring
+    matched_trajs = [t for t in results_df["trajectory"].unique() if traj_id in t]
+    if not matched_trajs:
+        print(f"Trajectory containing '{traj_id}' not found in results.")
+        continue
+    matched_traj = matched_trajs[0]
+    df_pinn = results_df[(results_df["trajectory"] == matched_traj) & (results_df["model"] != "PUNN")].sort_values("alpha")
+    df_punn = results_df[(results_df["trajectory"] == matched_traj) & (results_df["model"] == "PUNN")]
+    marker = next(markers)
+    color = next(colors)
+    # Combine PINN points and PUNN at alpha=1
+    x = list(df_pinn["alpha"])
+    y = list(df_pinn["mse_a"].astype(float))
+    if not df_punn.empty:
+        punn_alpha = 1
+        punn_mse = float(df_punn["mse_a"].iloc[0])
+        if punn_alpha not in x:
+            x.append(punn_alpha)
+            y.append(punn_mse)
+    ax.plot(x, y, marker=marker, color=color, label=f"{traj_id}")
 
-    # MSE plot
-    ax1.plot(pinn_df["alpha"], pinn_df["mse_a"].astype(float), marker="o", label="PINN MSE")
-    if not punn_df.empty:
-        ax1.axhline(float(punn_df["mse_a"].iloc[0]), color="red", linestyle="--", label="PUNN MSE")
-        ax1.scatter([1], [float(punn_df["mse_a"].iloc[0])], color="red", label="PUNN MSE (point)")
-    ax1.set_xlabel("$\\alpha$")
-    ax1.set_ylabel("MSE")
-    ax1.set_title(f"MSE")
-    ax1.legend()
-    ax1.grid(True)
+ax.set_xlabel("$\\alpha$")
+ax.set_ylabel("MSE (log scale)")
+ax.set_yscale('log')
+ax.set_title("PINN MSE curves for all trajectories (with PUNN baselines)")
+ax.legend()
+ax.grid(True)
+plt.tight_layout()
+plt.savefig(os.path.join(models_dir, "all_test_trajectories_mse_vs_alpha.png"))
+plt.close()
 
-    # MAE plot
-    ax2.plot(pinn_df["alpha"], pinn_df["mae_a"].astype(float), marker="o", label="PINN MAE")
-    if not punn_df.empty:
-        ax2.axhline(float(punn_df["mae_a"].iloc[0]), color="red", linestyle="--", label="PUNN MAE")
-        ax2.scatter([1], [float(punn_df["mae_a"].iloc[0])], color="red", label="PUNN MAE (point)")
-    ax1.set_xlabel("$\\alpha$")
-    ax2.set_ylabel("MAE")
-    ax2.set_title(f"MAE")
-    ax2.legend()
-    ax2.grid(True)
-
-    plt.tight_layout()
-    plt.savefig(os.path.join(models_dir, f"{traj_id}_metrics_vs_alpha.png"))
-    plt.close()
-
-print("Alpha comparison complete.")
+print("Alpha comparison complete. All MSE curves plotted.")

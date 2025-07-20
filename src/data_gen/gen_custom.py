@@ -28,9 +28,9 @@ if __name__ == "__main__":
     t_samp = np.linspace(0, t_end, 10, dtype=np.float32)
     # DEFINE ACCELERATION PROFILES
     a_profiles = []
-    a_profiles.append(np.array([2, 2, 2, 0, 0, 0, -1, -1, 0.5, 0.5], dtype=np.float32)) # cruisng
+    a_profiles.append(np.array([3, 1, 1.5, 0, 0, 0, 2, 1, 0, 0.1], dtype=np.float32)) # cruisng
     a_profiles.append(np.array([1]*10)) # accelerating
-    a_profiles.append(np.array([1, -1]*5, dtype=np.float32)) # oscillating
+    a_profiles.append(np.array([0.8, -0.1]*5, dtype=np.float32)) # oscillating
     a_profiles.append(np.array([2, 2, 2, 0.5, 0.1, 0.2, 0.2, 0, 0, -10], dtype=np.float32)) #em. brake
 
     # Convert acceleration profiles to force profiles
