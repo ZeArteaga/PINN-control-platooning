@@ -85,13 +85,12 @@ if __name__ == "__main__":
             'store_full_solution': True,
             'collocation_deg': 2, #default 2nd-degree polynomial to approximate the state trajectories
             'collocation_ni': 1, #default
-            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',
-                            'ipopt.print_level':0, 'print_time':0}
-            
+            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',}
+                           # 'ipopt.print_level':0, 'print_time':0}
             }
     
     opt_params = {
-        'Q': [1e4, 2], #spacing error, de/dt -> relative velocity  
+        'Q': [1e4, 1e1], #spacing error, de/dt -> relative velocity  
         'Qu': [0], #relative to u magnitude (input acceleration)
         'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
         'R': 1e-6, #-> relative to du/dt (control variable)
@@ -168,6 +167,7 @@ if __name__ == "__main__":
         print(f"  Actual gap (d): {mpc_gap}")
         print(f"  Gap error (d - d_ref): {mpc_gap - mpc_desired_gap}")
         print(f"  Chosen acceleration (u): {u/VEHICLE_MASS}")
+        print(f" Error matrix (e, de, u): {fv0.mpc.data['_aux', 'E'][-1]}")
 
         #* Have to do update of tvp before calling sim,
         #* for some reason simulator does all calculation before updating tvp, except for t=0 obv.
@@ -196,5 +196,5 @@ if __name__ == "__main__":
         print(f"  Calculated gap: {sim_x_prec - sim_x - L_prec}", f"using {fv0.sim.model.aux['d']}")
         print(f"  Actual gap (d): {sim_gap}\n") """
     
-    save_results([fv0.mpc, fv0.sim], overwrite=True)
+    save_results([fv0.mpc, fv0.sim], overwrite=False)
     plot(sim_graphics, mpc_graphics, 100)
