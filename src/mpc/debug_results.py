@@ -16,4 +16,4 @@ mpc_data = results["mpc"]
 sim_data = results["simulator"]
 
 mpc_graphics, sim_graphics = setup_graphics(mpc_data, sim_data)
-plot(sim_graphics, mpc_graphics, pred_t=100) # for predictions store_full_solution must be set to True
+plot(sim_graphics, mpc_graphics, pred_t=0) # for predictions store_full_solution must be set to True

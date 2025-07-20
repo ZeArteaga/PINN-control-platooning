@@ -19,6 +19,7 @@ def _set_model_common_params(model, const_params: dict):
     model.set_variable('_tvp', 't', shape=(1, 1)) # PINN input feature
     model.set_variable('_tvp', 'x_prec', shape=(1, 1))
     model.set_variable('_tvp', 'v_prec', shape=(1, 1))
+    model.set_variable('_tvp', 'a_prec', shape=(1,1))
     
     return model
 
@@ -48,7 +49,7 @@ def _define_expressions(model: Model, d_min, h, L_prec, a):
     return model
 
 def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
-                         scalerX_path: str = None, scalerY_path: str = None) -> Model: 
+                         scalerX_path: str | None = None, scalerY_path: str | None = None) -> Model: 
     onnx_model = onnx.load(onnx_model_path)    
     ca_converter = ONNXConversion(onnx_model)
     #*TEST CASadi CONVERSION ----:

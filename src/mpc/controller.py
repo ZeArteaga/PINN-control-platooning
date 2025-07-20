@@ -39,14 +39,14 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     tvp_template = mpc.get_tvp_template()
     
     def tvp_fun(t_now): #create time varying parameter fetch function
-        x_prec, v_prec = get_prec_state(platoon, fv_idx) #*get true (sensor) gap and prec vehicle speed (V2V)
+        x_prec, v_prec, a_prec = get_prec_state(platoon, fv_idx) #*get true (sensor) gap and V2V
         #print(f"  What mpc has called: {d}, {v_prec}")
         for k in range(mpc.settings.n_horizon+1):
                 dt = mpc.settings.t_step
                 t_pred = t_now + k * dt 
                 tvp_template['_tvp',k,'t'] = t_pred
-                tvp_template['_tvp',k,'v_prec'] = v_prec #*...and hold v constant 
-                tvp_template['_tvp',k,'x_prec'] = x_prec + k*dt*v_prec
+                tvp_template['_tvp',k,'v_prec'] = v_prec + k*dt*a_prec #*...and hold acc constant
+                tvp_template['_tvp',k,'x_prec'] = x_prec + k*(v_prec*dt + 0.5*a_prec*dt**2)
         return tvp_template
     
     mpc.set_tvp_fun(tvp_fun)
@@ -60,9 +60,10 @@ def setupSim(model: Model, sim_config: dict, get_prec_state, platoon: list, fv_i
     tvp_template = sim.get_tvp_template() #have to do this again, using the mpc one does not work
     
     def tvp_fun(t_now): #create time varying parameter fetch function
-        x_prec, v_prec = get_prec_state(platoon, fv_idx) #*get preceeding vehicle state...
+        x_prec, v_prec, a_prec = get_prec_state(platoon, fv_idx) #*get preceeding vehicle state...
         #print(f"  What sim has called: {x_prec}, {v_prec}")
         tvp_template['t'] = t_now 
+        tvp_template['a_prec'] = a_prec
         tvp_template['v_prec'] = v_prec
         tvp_template['x_prec'] = x_prec
         return tvp_template

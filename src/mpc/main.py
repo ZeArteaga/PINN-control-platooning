@@ -38,13 +38,16 @@ if __name__ == "__main__":
     t_end = t_samp[-1]
     noise_std = 0 #TODO
     t = np.arange(start=t_samp[0], stop=t_end+dt, step=dt) #end at t_end seconds
+    
     #TODO: add driving cycle for leader
-    lv_samp = np.array([50, 50, 50, 50, 50]) / 3.6 #leader speed check points 
-    lv_speed = interp1d(t_samp, lv_samp, kind='quadratic') #quadratic interpolation -> no drivetrain limitation for now
+    lv_samp = np.array([0, 1, -3, 0.1, -0.3]) #leader acc checkpoint 
+    lv_acc = interp1d(t_samp, lv_samp, kind='quadratic') #quadratic interpolation -> no drivetrain limitation for now
     lv_x0 = 30 #start at arbitrary position
+    lv_v0 = 50 / 3.6
     lv_curr_state = { #initial state - Leader Vehicle
         'x': lv_x0, 
-        'v': lv_speed(0)
+        'v': lv_v0,
+        'a': lv_acc(0)
     }
 
     def fn_get_prec_state(platoon: list, vehicle_idx: int):
@@ -52,13 +55,15 @@ if __name__ == "__main__":
             # For the first follower, the preceding vehicle is the leader.
             x_prec = lv_curr_state['x']
             v_prec = lv_curr_state['v']
+            a_prec = lv_curr_state['a']
         else:
             # For other followers, the preceding vehicle is in the platoon list.
             prec = platoon[vehicle_idx - 1]
             x_prec = prec.state[0]
             v_prec = prec.state[1]
+            a_prec = prec.state[2]
 
-        return x_prec, v_prec
+        return x_prec, v_prec, a_prec
 
     #Followers
     ini_gap = L_prec + 20 
@@ -85,15 +90,15 @@ if __name__ == "__main__":
             'store_full_solution': True,
             'collocation_deg': 2, #default 2nd-degree polynomial to approximate the state trajectories
             'collocation_ni': 1, #default
-            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',}
-                           # 'ipopt.print_level':0, 'print_time':0}
+            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',
+                           'ipopt.print_level':0, 'print_time':0}
             }
     
     opt_params = {
-        'Q': [1e4, 1e1], #spacing error, de/dt -> relative velocity  
-        'Qu': [0], #relative to u magnitude (input acceleration)
+        'Q': [2e4, 1.5e3], #spacing error, de/dt -> relative velocity  
+        'Qu': [2e-2], #relative to u magnitude (input acceleration)
         'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
-        'R': 1e-6, #-> relative to du/dt (control variable)
+        'R': 5e-5, #-> relative to du/dt (control variable)
         'u_max': 5*VEHICLE_MASS,
         'u_min': -8*VEHICLE_MASS,
         #TODO: Realistic Constraints
@@ -101,15 +106,15 @@ if __name__ == "__main__":
 
     sim_config = {
         't_step': dt,
-        'reltol': 1e-10, #default
-        'abstol': 1e-10 #default
+        'reltol': 1e-6,
+        'abstol': 1e-6, 
     }
     #*---
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     pinn_model_path = os.path.join(script_dir, "../../models/onnx/" \
-    "pinn_FC_noWindow_udds_hwycol_nycccol_70%_alpha0.5_features3.onnx")
+    "pinn_FC_noWindow_udds_hwycol_fullsplit_alpha0.25_features3.onnx")
     """ scalerX_path = os.path.join(script_dir, "../../models/scalers/scalerX_" \
     "FC_noWindow_udds_hwycol_nycccol_70%.save")
     scalerY_path = os.path.join(script_dir, "../../models/scalers/scalerY_" \
@@ -176,8 +181,9 @@ if __name__ == "__main__":
         #* because this last one was stored using the previous leader position. So the update has to be in the middle to sync the two,
         #* and eliminate the discrepancy that was causing a steady-state error. 
 
-        lv_curr_state['v'] = lv_speed(t_value)
-        lv_curr_state['x'] += lv_curr_state['v']*dt
+        lv_curr_state['a'] = lv_acc(t_value)
+        lv_curr_state['v'] += lv_curr_state['a']*dt
+        lv_curr_state['x'] += lv_curr_state['v']*dt + 0.5*lv_curr_state['a']*dt**2
 
         fv0.sim_step(du)        
 
@@ -197,4 +203,4 @@ if __name__ == "__main__":
         print(f"  Actual gap (d): {sim_gap}\n") """
     
     save_results([fv0.mpc, fv0.sim], overwrite=False)
-    plot(sim_graphics, mpc_graphics, 100)
+    plot(sim_graphics, mpc_graphics, 0)
