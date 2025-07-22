@@ -39,14 +39,21 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     tvp_template = mpc.get_tvp_template()
     
     def tvp_fun(t_now): #create time varying parameter fetch function
+        dt = mpc.settings.t_step
+        
         x_prec, v_prec, a_prec = get_prec_state(platoon, fv_idx) #*get true (sensor) gap and V2V
         #print(f"  What mpc has called: {d}, {v_prec}")
+        v_pred = v_prec
+        x_pred = x_prec
+        
         for k in range(mpc.settings.n_horizon+1):
-                dt = mpc.settings.t_step
-                t_pred = t_now + k * dt 
-                tvp_template['_tvp',k,'t'] = t_pred
-                tvp_template['_tvp',k,'v_prec'] = v_prec + k*dt*a_prec #*...and hold acc constant
-                tvp_template['_tvp',k,'x_prec'] = x_prec + k*(v_prec*dt + 0.5*a_prec*dt**2)
+            t_pred = t_now + k * dt
+    
+            tvp_template['_tvp', k, 't'] = t_pred
+            tvp_template['_tvp', k, 'x_prec'] = x_pred
+            tvp_template['_tvp', k, 'v_prec'] = v_pred
+            x_pred += v_pred*dt + 0.5 *a_prec*dt**2
+            v_pred += a_prec*dt
         return tvp_template
     
     mpc.set_tvp_fun(tvp_fun)

@@ -45,15 +45,19 @@ def setup_plot(g: Graphics, ax: plt.axes, with_label: bool=True):
 
     return ax
 
-def plot(sim_graphics, mpc_graphics, pred_t=None):
+def plot(mpc_graphics, sim_graphics = None, pred_t=None):
     n_subplot = 4
     fig, ax = plt.subplots(n_subplot, sharex=True, figsize=(16, 9))
     fig.align_ylabels()
 
-    setup_plot(sim_graphics, ax)
-    setup_plot(mpc_graphics, ax, with_label=False)
-    sim_graphics.plot_results()
-    if pred_t is not None:
+    if sim_graphics:
+        setup_plot(sim_graphics, ax)
+        setup_plot(mpc_graphics, ax, with_label=False)
+        sim_graphics.plot_results()
+    else:
+        setup_plot(mpc_graphics, ax, with_label=True)
+        mpc_graphics.plot_results()
+    if pred_t:
         mpc_graphics.plot_predictions(t_ind=pred_t)
 
     plt.tight_layout()

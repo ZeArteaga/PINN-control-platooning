@@ -95,12 +95,13 @@ if __name__ == "__main__":
             }
     
     opt_params = {
-        'Q': [2e4, 1.5e3], #spacing error, de/dt -> relative velocity  
-        'Qu': [2e-2], #relative to u magnitude (input acceleration)
+        'Q': [3e4, 1.5e3], #spacing error, de/dt -> relative velocity  
+        'Qu': [2e-3], #relative to u magnitude (input acceleration)
         'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
         'R': 5e-5, #-> relative to du/dt (control variable)
-        'u_max': 5*VEHICLE_MASS,
+        'u_max': 4.208*VEHICLE_MASS,
         'u_min': -8*VEHICLE_MASS,
+        'v_max': 140/3.6
         #TODO: Realistic Constraints
     }
 
@@ -181,9 +182,10 @@ if __name__ == "__main__":
         #* because this last one was stored using the previous leader position. So the update has to be in the middle to sync the two,
         #* and eliminate the discrepancy that was causing a steady-state error. 
 
-        lv_curr_state['a'] = lv_acc(t_value)
-        lv_curr_state['v'] += lv_curr_state['a']*dt
-        lv_curr_state['x'] += lv_curr_state['v']*dt + 0.5*lv_curr_state['a']*dt**2
+        lv_curr_state['a'] = lv_acc(t_value) #a[k]
+        lv_vk = lv_curr_state['v'] #v[k]
+        lv_curr_state['x'] += (lv_vk)*dt + 0.5*lv_curr_state['a']*dt**2 #v[k+1]
+        lv_curr_state['v'] += lv_curr_state['a']*dt #v[k+1]
 
         fv0.sim_step(du)        
 
@@ -202,5 +204,5 @@ if __name__ == "__main__":
         print(f"  Calculated gap: {sim_x_prec - sim_x - L_prec}", f"using {fv0.sim.model.aux['d']}")
         print(f"  Actual gap (d): {sim_gap}\n") """
     
-    save_results([fv0.mpc, fv0.sim], overwrite=False)
-    plot(sim_graphics, mpc_graphics, 0)
+    save_results([fv0.mpc], overwrite=True)
+    plot(mpc_graphics, pred_t=10)
