@@ -20,7 +20,7 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     lterm = error_vec.T @ W @ error_vec  #*LAGRANGE/ERROR PENALTY
     mterm = terminal_vec.T @ P @ terminal_vec  #*TERMINAL COST 
     mpc.set_objective(lterm=lterm, mterm=mterm) #, mterm=mterm)
-    mpc.set_rterm(delta_u=R) #*ACTUATOR PENALTYs
+    mpc.set_rterm(delta_u=R) #*ACTUATOR PENALTY
 
     #*BOUNDS/CONSTRAINTS -> simple bound for output acc but could define non-linear one
     u_min = opt_params.get('u_min', -np.inf)
@@ -41,34 +41,24 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     tvp_template = mpc.get_tvp_template()
     
     def tvp_fun(t_now): #create time varying parameter fetch function
-        v_prec = get_prec_state(platoon, fv) #*get true (sensor) gap and prec vehicle speed (V2V)
+        dt = mpc.settings.t_step
+        
+        x_prec, v_prec, a_prec = get_prec_state(platoon, fv) #*get true (sensor) gap and V2V
         #print(f"  What mpc has called: {d}, {v_prec}")
+        v_pred = v_prec
+        x_pred = x_prec
+        
         for k in range(mpc.settings.n_horizon+1):
-                dt = mpc.settings.t_step
-                t_pred = t_now + k * dt 
-                tvp_template['_tvp',k,'t'] = t_pred
-                tvp_template['_tvp',k,'v_prec'] = v_prec #*...and hold v constant 
-                #tvp_template['_tvp',k,'x_prec'] = x_prec + k*dt*v_prec
+            t_pred = t_now + k * dt
+    
+            tvp_template['_tvp', k, 't'] = t_pred
+            tvp_template['_tvp', k, 'x_prec'] = x_pred
+            tvp_template['_tvp', k, 'v_prec'] = v_pred
+            x_pred += v_pred*dt + 0.5 *a_prec*dt**2
+            v_pred += a_prec*dt
         return tvp_template
     
     mpc.set_tvp_fun(tvp_fun)
     
     mpc.setup()
     return mpc
-
-def setupSim(model: Model, sim_config: dict, get_prec_state, platoon: Platoon, fv: Vehicle) -> Simulator:
-    sim = Simulator(model)
-    sim.set_param(**sim_config)
-    tvp_template = sim.get_tvp_template() #have to do this again, using the mpc one does not work
-    
-    def tvp_fun(t_now): #create time varying parameter fetch function
-        v_prec = get_prec_state(platoon, fv) #*get preceeding vehicle state...
-        tvp_template['t'] = t_now 
-        tvp_template['v_prec'] = v_prec
-        #tvp_template['x_prec'] = x_prec
-        return tvp_template
-    
-    sim.set_tvp_fun(tvp_fun)
-    
-    sim.setup()
-    return sim
