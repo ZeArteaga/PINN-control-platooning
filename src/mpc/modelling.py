@@ -22,7 +22,7 @@ def _set_model_common_params(model, const_params: dict):
     
     return model
 
-def _define_expressions(model: Model, d_min, h, L_prec, a):
+def _define_expressions(model: Model, d_min, h, a):
     """Defines expressions common to both simulator and controller for monitoring."""
     #x = model.x['x']
     v = model.x['v']
@@ -39,7 +39,8 @@ def _define_expressions(model: Model, d_min, h, L_prec, a):
     model.set_expression('d', d)
     model.set_expression('e', error_spacing)
     model.set_expression('e_rel_v', error_rel_v)
-
+    model.set_expression('a_out', a)
+    
     E = ca.vertcat(error_spacing, de, model.x['u']) # State cost vector
     E_term = ca.vertcat(error_spacing, error_rel_v, model.x['u']) # Terminal cost vector
     
@@ -66,7 +67,6 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
 
     h = const_params["h"]
     d_min = const_params["d_min"]
-    L_prec = const_params['L_prec']
 
     X = ca.horzcat(model.tvp['t'], model.x['u'], model.x['v']) #correct order of features
     if scalerX_path:
@@ -87,7 +87,7 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
         print(f"ScalerY mean: {scalerY.mean_}")
         a = a * scalerY.scale_.item() + scalerY.mean_.item()  #in this case the scaler has single values/floats
 
-    model = _define_expressions(model, d_min, h, L_prec, a)    
+    model = _define_expressions(model, d_min, h, a)    
     
     #dxdt = model.x['v']
     #model.set_rhs('x', dxdt)
@@ -121,7 +121,7 @@ def SecondOrderIdealPlant(const_params: dict) -> Model:
     model.set_rhs('v', dvdt)
     dudt = model.u['delta_u']
     model.set_rhs('u', dudt)
-    model = _define_expressions(model, d_min, h, L_prec, a)    
+    model = _define_expressions(model, d_min, h, a)    
     e = model.aux['e']
 
     model.setup()
@@ -141,7 +141,7 @@ def ThirdOrderPlant(const_params: dict) -> Model:
     dadt = 1/tau*(a_ref - a) 
     model.set_rhs('a', dadt)
 
-    model = _define_expressions(model, d_min, h, L_prec, a)    
+    model = _define_expressions(model, d_min, h, a)    
 
     #dxdt = model.x['v']
     #model.set_rhs('x', dxdt)

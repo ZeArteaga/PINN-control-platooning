@@ -228,7 +228,7 @@ class Platoon:
 			vehicle.controller.compute_target_speed(vehicle.index)
 
 	#*changed
-	def control_step(self) -> list[float]:
+	def control_step(self) -> np.ndarray:
 		"""Run one step of control on each vehicle using their own controllers and return optimal references."""
 		
 		# run step on the lead vehicle
@@ -244,11 +244,31 @@ class Platoon:
 			if i==0:
 				d = v.gap_to(self.lead_vehicle) 
 			else:
-				d = v.gap_to(self[i-1]) 
+				d = v.gap_to(self.follower_vehicles[i-1]) 
 			try:
-				state = np.array([d, v.speed, v.u]) #* verify correct state order
+				state = np.array([d, v.speed, v.u]) #* verify correct state order (NOT FEATURE ORDER, check modelling.py)
 				a_ref = v.control_step(state)
 				a_refs.append(a_ref)
+				
+				#!DEBUG
+				mpc_x = v.controller.data['_x', 'x'][-1]
+				mpc_x_prec = v.controller.data['_tvp', 'x_prec'][-1]
+				mpc_v = v.controller.data['_x', 'v'][-1]
+				mpc_v_prec = v.controller.data['_tvp', 'v_prec'][-1]
+				mpc_gap = v.controller.data['_aux', 'd'][-1]
+				mpc_desired_gap = v.controller.data['_aux', 'd_ref'][-1]
+				u = v.controller.data['_x', 'u'][-1]
+
+				print(f"  Ego position (x): {mpc_x}")
+				print(f"  Ego velocity (v): {mpc_v}")
+				print(f"  Preceeding position (x_prec): {mpc_x_prec}")
+				print(f"  Preceeding velocity (v_prec): {mpc_v_prec}")
+				print(f"  Desired gap (d_ref): {mpc_desired_gap}")
+				print(f"  Actual gap (d): {mpc_gap}")
+				print(f"  Gap error (d - d_ref): {mpc_gap - mpc_desired_gap}")
+				print(f"  Chosen acceleration (u): {u/VEHICLE_MASS}")
+				print(f" Error matrix (e, de, u): {v.controller.data['_aux', 'E'][-1]}")	
+
 			except Exception as e:
 				warnings.warn(f"FV{v.index}: {e}")
 		return np.array(a_refs)
@@ -513,6 +533,7 @@ def fn_get_prec_state(platoon: Platoon, follower: Vehicle):
 	idx = follower.index #0 is the leader
 	prec = platoon[idx - 1]
 
-    #*V2V: Get vel of preceding vehicle
+    #*V2V: Get acc of preceding vehicle
+	a_prec = prec.acceleration
 	v_prec = prec.speed
-	return np.array([v_prec])
+	return np.array([v_prec, a_prec])

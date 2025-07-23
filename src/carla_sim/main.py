@@ -164,14 +164,13 @@ if __name__ == '__main__':
     
     parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
     parser.add_argument("--n-horizon", type=int, default=15, help="MPC: Prediction horizon length (steps)")
-    parser.add_argument("--Q", type=float, nargs=2, default=[5e4, 4], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
+    parser.add_argument("--Q", type=float, nargs=2, default=[3e4, 2], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
     "Q[1,1] -> relative velocity error")
     parser.add_argument("--Qu", type=float, nargs=1, default=0, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
     "Q[1,1] -> relative velocity error")
     parser.add_argument("--P", type=float, default=0, help="MPC: P weight (meyer term). Terminal error.")
-    parser.add_argument("--R", type=float, default=1e-6, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
-    parser.add_argument("--a-limit", type=float, nargs=2, default=[-5, 8], help="MPC constraint (ref. acc): [a_min, a_max]")
-    parser.add_argument("--L_prec", type=float, default=3.876, help="Model params: Preeceding vehicle length.")
+    parser.add_argument("--R", type=float, default=5e-5, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
+    parser.add_argument("--a-limit", type=float, nargs=2, default=[-11, 7], help="MPC constraint (ref. acc): [a_min, a_max]")
     parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
     parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")
 
@@ -179,8 +178,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model_params = {'h': args.h,
-                    'd_min': args.d_min,
-                    'L_prec': args.L_prec}
+                    'd_min': args.d_min}
     
     mpc_config = {
             'n_horizon': args.n_horizon,
@@ -204,7 +202,8 @@ if __name__ == '__main__':
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    pinn_model_path = os.path.join(script_dir, "../../models/onnx/pinn_FC_noWindow_udds_hwycol_nycccol_70%_alpha0.5_features3.onnx")
+    pinn_model_path = os.path.join(script_dir, "../../models/onnx/" \
+    "pinn_FC_noWindow_udds_hwycol_fullsplit_alpha0.25_features3.onnx")
     results_path = os.path.join(script_dir, "/results/")
 
     # Building platoon...
