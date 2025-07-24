@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
@@ -30,20 +31,25 @@ class FV:
         return u
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('saveAs', type=str, help="The name of the results .pkl file to store (do not include .pkl).")
+    args = parser.parse_args()
     #*CONFIG---
     VEHICLE_MASS = 1284.0
     dt = 0.1
     L_prec = 4.5
-    t_samp = np.array([0, 5, 10, 15, 20]) #time check points
-    t_end = t_samp[-1]
+    t_end = 20
     noise_std = 0 #TODO
-    t = np.arange(start=t_samp[0], stop=t_end+dt, step=dt) #end at t_end seconds
+    t = np.arange(start=0, stop=t_end+dt, step=dt) #end at t_end seconds
     
-    #TODO: add driving cycle for leader
-    lv_samp = np.array([0, 1, -3, 0.1, -0.3]) #leader acc checkpoint 
-    lv_acc = interp1d(t_samp, lv_samp, kind='quadratic') #quadratic interpolation -> no drivetrain limitation for now
+    t_samp = np.linspace(0, t_end, 10) #time check points
+    #lv_samp = np.array([3, 1, 1.5, 0, 0, 0, 2, 1, 0, 0.1], dtype=np.float32) two-stage cruising
+    lv_samp = np.array([2, 2, 2, 0.5, 0.1, 0.2, 0.2, 0.1, -2, -12], dtype=np.float32) #emergency brake
+    #lv_samp = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32) #constant
+    lv_acc = interp1d(t_samp, lv_samp, kind='quadratic') 
     lv_x0 = 30 #start at arbitrary position
-    lv_v0 = 50 / 3.6
+    #lv_v0 = 50 / 3.6
+    lv_v0 = 0
     lv_curr_state = { #initial state - Leader Vehicle
         'x': lv_x0, 
         'v': lv_v0,
@@ -66,8 +72,9 @@ if __name__ == "__main__":
         return x_prec, v_prec, a_prec
 
     #Followers
-    ini_gap = L_prec + 20 
-    fv_v0 = 40/3.6
+    ini_gap = 20 + L_prec
+    #fv_v0 = 40/3.6
+    fv_v0 = 0
     #*Plant state: [x, v, u, a]
     sim_initial_state = np.array([lv_x0 - ini_gap, fv_v0, 0, 0])
     #*MPC state: [x, v, u]
@@ -95,20 +102,20 @@ if __name__ == "__main__":
             }
     
     opt_params = {
-        'Q': [3e4, 1.5e3], #spacing error, de/dt -> relative velocity  
+        'Q': [3e4, 2e2], #spacing error, de/dt -> relative velocity  
         'Qu': [2e-3], #relative to u magnitude (input acceleration)
         'P': np.diag([0, 0, 0]), #TODO: Investigate terminal cost
-        'R': 5e-5, #-> relative to du/dt (control variable)
+        'R': 2e-5, #-> relative to du/dt (control variable)
         'u_max': 4.208*VEHICLE_MASS,
-        'u_min': -8*VEHICLE_MASS,
+        'u_min': -10*VEHICLE_MASS,
         'v_max': 140/3.6
         #TODO: Realistic Constraints
     }
 
     sim_config = {
         't_step': dt,
-        'reltol': 1e-6,
-        'abstol': 1e-6, 
+        'reltol': 1e-10,
+        'abstol': 1e-10, 
     }
     #*---
 
@@ -146,7 +153,8 @@ if __name__ == "__main__":
     for i, fv in enumerate(platoon):
         print(f"\n(FV{i}) Set Initial Conditions:")
         print(str(fv.mpc.x0['x']) + "m", str(fv.mpc.x0['v']*3.6) + "km/h") #, str(fv.sim.x0['a']) + "m/s^2")
-        mpc_graphics, sim_graphics = setup_graphics(fv.mpc.data, fv.sim.data)
+        mpc_graphics = setup_graphics(fv.mpc.data)
+        sim_graphics = setup_graphics(fv.sim.data)
         fv.set_graphics(mpc_graphics, sim_graphics)
         
         
@@ -204,5 +212,5 @@ if __name__ == "__main__":
         print(f"  Calculated gap: {sim_x_prec - sim_x - L_prec}", f"using {fv0.sim.model.aux['d']}")
         print(f"  Actual gap (d): {sim_gap}\n") """
     
-    save_results([fv0.mpc], overwrite=True)
+    save_results([fv0.mpc], overwrite=True, result_name=args.saveAs)
     plot(mpc_graphics, pred_t=10)
