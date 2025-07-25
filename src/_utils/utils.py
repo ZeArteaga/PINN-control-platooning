@@ -29,10 +29,16 @@ def save_trajectory_plot(data: dict, csvpath: str, figpath: str, traj_id: str) -
     df.to_csv(csvpath + '.csv', index=False)
     print(f"Saved CACC trajectory {traj_id} to {csvpath}")
 
+    plt.rcParams.update({
+        'font.size': 12,
+        'lines.linewidth': 2.5, # Default is 1.5
+        'lines.markersize': 3,
+    })
+
     cmap = plt.get_cmap('tab10')
     colors = [cmap(i) for i in range(10)]
     fig, axs = plt.subplots(2, 2, figsize=(16, 9))
-    fig.suptitle(f"CACC Follower/Leader Simulation: {traj_id}", fontsize=20)
+    fig.suptitle(f"CACC Follower/Leader Simulation: {traj_id}")
 
     # 1. Vehicle Positions
     if 'fv0_x' in df:
@@ -49,7 +55,7 @@ def save_trajectory_plot(data: dict, csvpath: str, figpath: str, traj_id: str) -
     if 'fv0_v' in df:
         axs[0, 1].plot(df['t'], df['fv0_v'] * 3.6, label='FV Velocity (km/h)', color=colors[0])
     if 'fv0_v_noise' in df:
-        axs[0, 1].scatter(df['t'], df['fv0_v_noise'] * 3.6, label='FV Noisy Velocity (km/h)', color=colors[3], marker='o', s=2)
+        axs[0, 1].scatter(df['t'], df['fv0_v_noise'] * 3.6, label='FV Noisy Velocity (km/h)', color=colors[3], marker='o')
     if 'lv_v' in df:
         axs[0, 1].plot(df['t'], df['lv_v'] * 3.6, label='LV Velocity (km/h)', color=colors[1])
     axs[0, 1].set_title("Vehicle Velocities")
@@ -64,7 +70,7 @@ def save_trajectory_plot(data: dict, csvpath: str, figpath: str, traj_id: str) -
     color_u = colors[4]
     axs[1, 0].plot(df['t'], df['fv0_a'], label='FV Acceleration (m/s²)', color=color_acc)
     if 'fv0_a_noise' in df:
-        axs[1, 0].scatter(df['t'], df['fv0_a_noise'], label='FV Noisy Acceleration (m/s²)', color=color_acc_noise, marker='o', s=2)
+        axs[1, 0].scatter(df['t'], df['fv0_a_noise'], label='FV Noisy Acceleration (m/s²)', color=color_acc_noise, marker='o')
     axs[1, 0].set_xlabel("Time (s)")
     axs[1, 0].set_ylabel("Acceleration (m/s²)")
     axs[1, 0].plot(df['t'], df['fv0_a_ref'], label='FV Input Reference Acceleration (m/s²)', color=color_u, linestyle='--')
@@ -76,7 +82,7 @@ def save_trajectory_plot(data: dict, csvpath: str, figpath: str, traj_id: str) -
     if 'd_fv0_lv' in df:
         axs[1, 1].plot(df['t'], df['d_fv0_lv'], label='Actual Spacing (m)', color=colors[0])
     if 'd_fv0_lv_noise' in df:
-        axs[1, 1].scatter(df['t'], df['d_fv0_lv_noise'], label='Noisy Spacing (m)', color=colors[3], marker='o', s=2)
+        axs[1, 1].scatter(df['t'], df['d_fv0_lv_noise'], label='Noisy Spacing (m)', color=colors[3], marker='o')
     if 'd*_fv0_lv' in df:
         axs[1, 1].plot(df['t'], df['d*_fv0_lv'], label='Target Spacing (m)', color=colors[5], linestyle='--')
     axs[1, 1].set_title("Inter-Vehicle Spacing")
