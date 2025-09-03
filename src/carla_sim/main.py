@@ -34,7 +34,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 		"""
     
     actor_list = []
-    SEED = 4
+    SEED = 45
 
     try:
         #*GET CLIENT, WORLD, TRAFFIC MANAGER
@@ -43,6 +43,8 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 
         spect = sim.get_spectator()
+        world = sim.get_world()
+
         tm = sim.get_trafficmanager(port=8000)
         tm_port = tm.get_port()
         tm.set_random_device_seed(SEED) #for simulation determinism
@@ -50,8 +52,9 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 
         #*PICK VEHICLE
         vehicle_bp_lib = sim.get_vehicle_blueprints()
-        lv_bp = vehicle_bp_lib.filter('vehicle.mini.cooper_s_2021')[0] #returns a list so we pick the only element
-
+        imu_bp = sim.get_sensor_blueprints().find('sensor.other.imu')
+        lv_bp = vehicle_bp_lib.find('vehicle.mini.cooper_s_2021')
+        
         #*SPAWN LEAD VEHICLE AND ADD TO ACTOR LIST AND PLATOON
         spawn_points = sim.get_map().get_spawn_points()
         if not spawn_points:
@@ -61,7 +64,10 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         lv_sp = spawn_points[1]
         platoon = Platoon(sim)
         lv: Vehicle = platoon.add_lead_vehicle(lv_bp, lv_sp)
-        #DONT APPEND TO ACTORS LIST, THIS ONLY FOR NPCs
+        #*add leader sensor 
+        imu_lv = world.spawn_actor(imu_bp, carla.Transform(), attach_to=lv._carla_vehicle) #at center of mass (ideal)
+        lv.attach_sensor('imu', imu_lv) #add sensor to custom vehicle class    
+        actor_list.append(imu_lv) #for later cleanup
         print(f"Spawned LV: {lv.type_id} (id: {lv.id}) at {lv_sp.location}")
         sim.tick()
 
@@ -70,6 +76,11 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             followers = platoon.get_follower_list()
             fv: Vehicle = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
                                                 else followers[-1].transform_ahead(-10, force_straight=True)))
+            #*add follower sensors
+            imu = world.spawn_actor(imu_bp, carla.Transform(), attach_to=fv._carla_vehicle)
+            fv.attach_sensor('imu', imu)
+            actor_list.append(imu) 
+            
             #*Setup controllers
             fv_mass = fv.get_physics_control().mass
             opt_params["u_max"] = acc_cons[1]*fv_mass
@@ -80,6 +91,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             pid = PIDLongitudinalController(fv, dt=sim_dt,
                                              K_P=8, K_I=0.6, K_D=0.5)
             fv.attach_controller(mpc, pid)
+            
             print(f"Spawned FV: {fv.type_id} (id: {fv.id})")
             sim.tick()
             sim.tick()
@@ -101,8 +113,8 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         while i<=step_end:
             print(f"[t={sim_dt*i}]\n")
             if i % control_rate == 0:
-                sim.compute_control_step(platoon, control_dt)
-            sim.apply_control_step(platoon)
+                platoon.compute_high_control(control_dt)
+            platoon.apply_low_control(sim_dt)
             sim.update_spectator(platoon)
             sim.tick()
             i += 1
@@ -129,7 +141,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
                 mpc_dict = {}
                 mpc_dict['_time'] = time_arr #add time entry
                 mpc_dict = from_mpc_data_to_dict(mpc_dict, follower.controller, ['aux', 'tvp', 'x', 'u'])
-                
+                mpc_dict['a_out'] = np.array(follower.acc_out_history).reshape(-1, 1) #store resulting output acceleration
                 with open(path, 'wb') as f:
                     pickle.dump(mpc_dict, f)
                 print(f"Saved data for follower {i} to {results_dir}")
@@ -164,12 +176,12 @@ if __name__ == '__main__':
     
     parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
     parser.add_argument("--n-horizon", type=int, default=15, help="MPC: Prediction horizon length (steps)")
-    parser.add_argument("--Q", type=float, nargs=2, default=[3e4, 2], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
+    parser.add_argument("--Q", type=float, nargs=2, default=[3e4, 5], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
     "Q[1,1] -> relative velocity error")
-    parser.add_argument("--Qu", type=float, nargs=1, default=0, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
+    parser.add_argument("--Qu", type=float, nargs=1, default=1e-3, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
     "Q[1,1] -> relative velocity error")
     parser.add_argument("--P", type=float, default=0, help="MPC: P weight (meyer term). Terminal error.")
-    parser.add_argument("--R", type=float, default=5e-5, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
+    parser.add_argument("--R", type=float, default=5e-2, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
     parser.add_argument("--a-limit", type=float, nargs=2, default=[-11, 7], help="MPC constraint (ref. acc): [a_min, a_max]")
     parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
     parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")

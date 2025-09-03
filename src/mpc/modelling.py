@@ -13,8 +13,8 @@ def _set_model_common_params(model, const_params: dict):
     #model.set_variable('_x', 'x', shape=(1, 1)) #assuming 1D scenario else this is isn't needed
     model.set_variable('_x', 'd', shape=(1, 1))
     model.set_variable('_x', 'v', shape=(1, 1))
-    model.set_variable('_u', 'delta_u', shape=(1,1))
-    model.set_variable('_x', 'u', shape=(1, 1))
+    #model.set_variable('_u', 'delta_u', shape=(1,1))
+    model.set_variable('_u', 'u', shape=(1, 1))
     
     model.set_variable('_tvp', 't', shape=(1, 1)) # PINN input feature
     #model.set_variable('_tvp', 'x_prec', shape=(1, 1))
@@ -41,8 +41,9 @@ def _define_expressions(model: Model, d_min, h, a):
     model.set_expression('e_rel_v', error_rel_v)
     model.set_expression('a_out', a)
     
-    E = ca.vertcat(error_spacing, de, model.x['u']) # State cost vector
-    E_term = ca.vertcat(error_spacing, error_rel_v, model.x['u']) # Terminal cost vector
+    #E = ca.vertcat(error_spacing, de, model.x['u']) # State cost vector
+    E = ca.vertcat(error_spacing, de) # State cost vector
+    E_term = ca.vertcat(error_spacing, error_rel_v, model.u['u']) # Terminal cost vector
     
     model.set_expression('E', E)
     model.set_expression('E_term', E_term)
@@ -68,7 +69,7 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
     h = const_params["h"]
     d_min = const_params["d_min"]
 
-    X = ca.horzcat(model.tvp['t'], model.x['u'], model.x['v']) #correct order of features
+    X = ca.horzcat(model.tvp['t'], model.u['u'], model.x['v']) #correct order of features
     if scalerX_path:
         scalerX = joblib.load(scalerX_path)
         target_min = scalerX.feature_range[0]
@@ -95,8 +96,8 @@ def SecondOrderPINNmodel(onnx_model_path: str, const_params: dict,
     dvdt = a 
     model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
-    dudt = model.u['delta_u']
-    model.set_rhs('u', dudt)
+    #dudt = model.u['delta_u']
+    #model.set_rhs('u', dudt)
     e = model.aux['e']
     
     model.setup() #after this cannot setup more variables
@@ -115,12 +116,12 @@ def SecondOrderIdealPlant(const_params: dict) -> Model:
     #model.set_rhs('x', dxdt)
     dgapdt = model.tvp['v_prec'] - model.x['v'] #gap
     model.set_rhs('d', dgapdt)
-    a = model.x['u'] / m
+    a = model.u['u'] / m
     dvdt = a 
     #model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
-    dudt = model.u['delta_u']
-    model.set_rhs('u', dudt)
+    #dudt = model.u['delta_u']
+    #model.set_rhs('u', dudt)
     model = _define_expressions(model, d_min, h, a)    
     e = model.aux['e']
 
@@ -137,7 +138,7 @@ def ThirdOrderPlant(const_params: dict) -> Model:
     model = _set_model_common_params(model, const_params)
     
     a = model.set_variable('_x', 'a', shape=(1,1))
-    a_ref = model.x['u']/m
+    a_ref = model.u['u']/m
     dadt = 1/tau*(a_ref - a) 
     model.set_rhs('a', dadt)
 
@@ -151,8 +152,8 @@ def ThirdOrderPlant(const_params: dict) -> Model:
     #model.set_rhs('d', dgapdt)
     model.set_rhs('v', dvdt)
     e = model.aux['e']
-    dudt = model.u['delta_u']
-    model.set_rhs('u', dudt)
+    #dudt = model.u['delta_u']
+    #model.set_rhs('u', dudt)
 
     model.setup()
     return model

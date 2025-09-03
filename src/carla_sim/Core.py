@@ -69,40 +69,6 @@ class Simulation(carla.Client):
 			platoon: the Platoon instance to be added
 		"""
 		self.platoons.append(platoon)
-
-	def compute_control_step(self, platoon: 'Platoon', control_dt: float = 0.1):
-		"""Compute MPC control step for the platoon (high-level control)
-		
-		Args:
-			platoon: The platoon to compute control for
-			control_dt: Control time step
-		"""
-		followers = platoon.get_follower_list()
-		
-		platoon.a_refs = platoon.control_step()
-		platoon.v_refs = np.zeros(shape=len(followers),)
-		
-		for idx, fv in enumerate(followers):
-			# Convert acceleration to target speed in km/h for PID
-			platoon.v_refs[idx] = (fv.speed + platoon.a_refs[idx] * control_dt) * 3.6
-			#!DEBUG
-			print(f"gap={fv.controller.data['_aux', 'd'][-1]}")
-			print(f"target gap={fv.controller.data['_aux', 'd_ref'][-1]}")
-			print(f"Commanded acceleration={platoon.a_refs[idx]}")
-	
-	def apply_control_step(self, platoon: 'Platoon'):
-		"""Apply low-level control to all follower vehicles in the platoon
-		
-		Args:
-			platoon: The platoon to apply control to
-		"""
-		followers = platoon.get_follower_list()
-		
-		for idx, fv in enumerate(followers):
-			#!DEBUG
-			print(f"Target speeds = {platoon.v_refs[idx]}")
-			control = fv.run_pid_step(platoon.v_refs[idx], debug=True)
-			fv.apply_control(control)
 	
 	def update_spectator(self, platoon: 'Platoon'):
 		"""Update spectator camera to follow the platoon
@@ -124,6 +90,10 @@ class Simulation(carla.Client):
 		vehicle_blueprints = self.world.get_blueprint_library().filter('*vehicle*')
 		return vehicle_blueprints
 	
+	def get_sensor_blueprints(self):
+		sensor_bp  = self.world.get_blueprint_library().filter('sensor*')
+		return sensor_bp
+
 	def get_map(self):
 		return self.map
 	
@@ -163,9 +133,10 @@ class Platoon:
 		self.simulation.add_platoon(self)
 		
 		# Control references
-		self.a_refs = np.array([])  # Acceleration references from MPC
-		self.v_refs = np.array([])  # Velocity references for PID controllers
-
+		self.a_refs = np.array([]) # Acceleration references from MPC
+		self.v_refs = np.array([])  # Velocity references for PID controllers (km/h)
+		self.v0 = np.array([]) #current speeds (km/h) at the beginning of control interval
+		
 	def __getitem__(self, item):
 		all_vehicles = [self.lead_vehicle] + self.follower_vehicles
 		try:
@@ -228,8 +199,8 @@ class Platoon:
 			vehicle.controller.compute_target_speed(vehicle.index)
 
 	#*changed
-	def control_step(self) -> np.ndarray:
-		"""Run one step of control on each vehicle using their own controllers and return optimal references."""
+	def compute_high_control(self, control_dt):
+		"""Run one step of MPC on each vehicle using their own controllers"""
 		
 		# run step on the lead vehicle
 		#TODO: control leader vehicle on some trajectory, for now autopilot
@@ -238,40 +209,38 @@ class Platoon:
 				...
 			except Exception as e:
 				warnings.warn(f"{e}, lead vehicle") """
+		fv : Vehicle
 		a_refs = []
-		v : Vehicle
-		for i, v in enumerate(self.follower_vehicles):
+		v0 = []
+		for i, fv in enumerate(self.follower_vehicles):
 			if i==0:
-				d = v.gap_to(self.lead_vehicle) 
+				d = fv.gap_to(self.lead_vehicle) 
 			else:
-				d = v.gap_to(self.follower_vehicles[i-1]) 
+				d = fv.gap_to(self.follower_vehicles[i-1]) 
 			try:
-				state = np.array([d, v.speed, v.u]) #* verify correct state order (NOT FEATURE ORDER, check modelling.py)
-				a_ref = v.control_step(state)
+				#state = np.array([d, fv.speed, fv.u]) #* verify correct state order (NOT FEATURE ORDER, check modelling.py)
+				v = fv.speed
+				state = np.array([d, v])
+
+				fv.acc_out_history.append(fv.acceleration) #store acceleration info
+
+				a_ref = fv.control_step(state)
 				a_refs.append(a_ref)
-				
-				#!DEBUG
-				mpc_x = v.controller.data['_x', 'x'][-1]
-				mpc_x_prec = v.controller.data['_tvp', 'x_prec'][-1]
-				mpc_v = v.controller.data['_x', 'v'][-1]
-				mpc_v_prec = v.controller.data['_tvp', 'v_prec'][-1]
-				mpc_gap = v.controller.data['_aux', 'd'][-1]
-				mpc_desired_gap = v.controller.data['_aux', 'd_ref'][-1]
-				u = v.controller.data['_x', 'u'][-1]
-
-				print(f"  Ego position (x): {mpc_x}")
-				print(f"  Ego velocity (v): {mpc_v}")
-				print(f"  Preceeding position (x_prec): {mpc_x_prec}")
-				print(f"  Preceeding velocity (v_prec): {mpc_v_prec}")
-				print(f"  Desired gap (d_ref): {mpc_desired_gap}")
-				print(f"  Actual gap (d): {mpc_gap}")
-				print(f"  Gap error (d - d_ref): {mpc_gap - mpc_desired_gap}")
-				print(f"  Chosen acceleration (u): {u/VEHICLE_MASS}")
-				print(f" Error matrix (e, de, u): {v.controller.data['_aux', 'E'][-1]}")	
-
+				v0.append(v)		
 			except Exception as e:
-				warnings.warn(f"FV{v.index}: {e}")
-		return np.array(a_refs)
+				warnings.warn(f"FV{i}: {e}")
+
+		self.a_refs = np.array(a_refs)
+		self.v0 = np.array(v0)*3.6
+		self.v_refs = self.v0 #set to true velocity before integration 
+
+	def apply_low_control(self, dt):
+		self.v_refs += self.a_refs*dt*3.6 #*integrate considering a_refs constant for the rest of control interval (in km/h)
+		for idx, fv in enumerate(self.follower_vehicles):
+			#!DEBUG
+			print(f"MPC acceleration = {self.a_refs[idx]}\n",  f"Target speed = {self.v_refs[idx]}")
+			control = fv.run_pid_step(self.v_refs[idx], debug=True)
+			fv.apply_control(control)
 
 	def reindex(self):
 		"""Adjust the index attributes of the Vehicle instances in the platoon to match the actual order."""
@@ -399,10 +368,14 @@ class Vehicle:
 		self._carla_vehicle = world.spawn_actor(blueprint, spawn_point)
 		self.index = index
 		self.controller = None #high level controller
+		self.sensors = {}
 		self.pid = None #low level controller
 		self._autopilot = False
+		#added:
 		self.u = 0
-		self.control_dt = 0
+		self.acc_out_history = []
+		self.imu_acc = carla.Vector3D(0, 0, 0)
+		self.imu_gyro = carla.Vector3D(0, 0, 0)
 
 	def __lt__(self, other):
 		return self.index < other.index
@@ -419,6 +392,16 @@ class Vehicle:
 		self.controller = controller
 		self.control_dt = controller.settings.t_step
 		self.pid = pid
+
+	def _imu_callback(self, data: carla.IMUMeasurement):
+		"""store the latest IMU accelerometer data."""
+		self.imu_acc = data.accelerometer
+		self.imu_gyro = data.gyroscope
+
+	def attach_sensor(self, sensor_name: str, sensor: carla.Sensor):
+		self.sensors[sensor_name] = sensor 
+		if sensor_name == 'imu':
+			sensor.listen(self._imu_callback)
 
 	def set_autopilot(self, is_autopilot, tm_port):
 		"""Turn on Carla autopilot.
@@ -446,11 +429,10 @@ class Vehicle:
 
 	@property
 	def acceleration(self):
-		"""Signed norm of acceleration. Warning: can be inaccurate."""
-		a = self._carla_vehicle.get_acceleration()
-		v = self._carla_vehicle.get_velocity()
-		sign = 1 if a.x * v.x + a.y * v.y >= 0 else -1
-		return sign*np.sqrt(a.x**2 + a.y**2 + a.z**2)
+		'''Returns the signed longitudinal acceleration from the IMU sensor in m/s².
+		Assuming vehicle CoM placement, should be aligned with x-axis
+		'''
+		return self.imu_acc.x
 
 	@property
 	def heading(self):
@@ -484,8 +466,9 @@ class Vehicle:
 	def control_step(self, state: np.ndarray):
 		"""For a follower vehicle, this method applies one control step."""
 
-		delta_u = self.controller.make_step(state).item()
-		self.u += delta_u * self.control_dt
+		#delta_u = self.controller.make_step(state).item()
+		#self.u += delta_u * self.control_dt
+		self.u = self.controller.make_step(state).item()
 		mass = float(self.get_physics_control().mass)
 		a_ref = self.u/mass
 		return a_ref
@@ -534,6 +517,6 @@ def fn_get_prec_state(platoon: Platoon, follower: Vehicle):
 	prec = platoon[idx - 1]
 
     #*V2V: Get acc of preceding vehicle
-	a_prec = prec.acceleration
 	v_prec = prec.speed
+	a_prec = prec.acceleration
 	return np.array([v_prec, a_prec])
