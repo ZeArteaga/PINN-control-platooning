@@ -176,15 +176,16 @@ if __name__ == '__main__':
     
     parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
     parser.add_argument("--n-horizon", type=int, default=15, help="MPC: Prediction horizon length (steps)")
-    parser.add_argument("--Q", type=float, nargs=2, default=[3e4, 5], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
-    "Q[1,1] -> relative velocity error")
+    parser.add_argument("--Q", type=float, nargs=2, default=[3e4, 5e-1], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
+    "Q[1,1] -> relative velocity error") #5e0
     parser.add_argument("--Qu", type=float, nargs=1, default=1e-3, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
     "Q[1,1] -> relative velocity error")
     parser.add_argument("--P", type=float, default=0, help="MPC: P weight (meyer term). Terminal error.")
-    parser.add_argument("--R", type=float, default=5e-2, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
+    parser.add_argument("--R", type=float, default=5e-4, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
     parser.add_argument("--a-limit", type=float, nargs=2, default=[-11, 7], help="MPC constraint (ref. acc): [a_min, a_max]")
     parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
     parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")
+    parser.add_argument("--filt-cuttoff", type=float, default=0.6, help="Defines filter cutoff/strength (0<>1) for V2V acceleration data.")
 
     
     args = parser.parse_args()
@@ -209,6 +210,7 @@ if __name__ == '__main__':
         'Qu': [args.Qu],
         'P': args.P,
         'R': args.R,
+        'alpha': args.filt_cuttoff
         #*input (acc) constraints added inside main 
     }
 

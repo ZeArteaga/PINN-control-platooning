@@ -397,6 +397,8 @@ class Vehicle:
 		"""store the latest IMU accelerometer data."""
 		self.imu_acc = data.accelerometer
 		self.imu_gyro = data.gyroscope
+		#!DEBUG:
+		#print(data.accelerometer, data.gyroscope)
 
 	def attach_sensor(self, sensor_name: str, sensor: carla.Sensor):
 		self.sensors[sensor_name] = sensor 
@@ -429,11 +431,24 @@ class Vehicle:
 
 	@property
 	def acceleration(self):
-		'''Returns the signed longitudinal acceleration from the IMU sensor in m/s².
+		""" '''Returns the signed longitudinal acceleration from the IMU sensor in m/s².
 		Assuming vehicle CoM placement, should be aligned with x-axis
 		'''
-		return self.imu_acc.x
+		#Raw acceleration from the IMU
+		raw_acc = self.imu_acc.x
 
+        #Get the vehicle's current transform.
+		transform = self.get_transform()
+        
+		inverse_transform = transform.rotation.get_inverse_transform() #!doesn't exist
+		g_in_world_frame = carla.Vector3D(0, 0, 9.81)
+		g_in_local_frame = inverse_transform.transform_vector(g_in_world_frame)
+
+		acc_local = raw_acc - g_in_local_frame
+        
+        # true longitudinal acceleration.
+		return acc_local.x """
+	
 	@property
 	def heading(self):
 		"""The angle in which the vehicle is headed in Carla's coordinate system."""
@@ -516,7 +531,7 @@ def fn_get_prec_state(platoon: Platoon, follower: Vehicle):
 	idx = follower.index #0 is the leader
 	prec = platoon[idx - 1]
 
-    #*V2V: Get acc of preceding vehicle
+    #*V2V: Get acc and speed of preceding vehicle. Speed and gap will be integrated inside the controller (TVPs)
 	v_prec = prec.speed
 	a_prec = prec.acceleration
 	return np.array([v_prec, a_prec])

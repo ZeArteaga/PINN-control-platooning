@@ -41,12 +41,13 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     
     #need to define time varying parameter callback over prediction horizon
     tvp_template = mpc.get_tvp_template()
-    
+    a_prec: float = 0
     def tvp_fun(t_now): #create time varying parameter fetch function
+        nonlocal a_prec
         dt = mpc.settings.t_step
-        
-        v_prec, a_prec = get_prec_state(platoon, fv) #*get true (sensor) gap and V2V
-        #print(f"  What mpc has called: {d}, {v_prec}")
+        alpha = opt_params.get('alpha', 1) #default: no acc lowpass filter
+        v_prec, a_prec_new = get_prec_state(platoon, fv) #*get true (sensor) gap and V2V
+        a_prec = a_prec*alpha + (1-alpha)*a_prec_new #filter acc
         v_pred = v_prec
         for k in range(mpc.settings.n_horizon+1):
             t_pred = t_now + k * dt
