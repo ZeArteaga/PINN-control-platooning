@@ -53,6 +53,8 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         #*PICK VEHICLE
         vehicle_bp_lib = sim.get_vehicle_blueprints()
         imu_bp = sim.get_sensor_blueprints().find('sensor.other.imu')
+        for attr in imu_bp:
+            print(attr.id, "=>", imu_bp.get_attribute(attr.id))
         lv_bp = vehicle_bp_lib.find('vehicle.mini.cooper_s_2021')
         
         #*SPAWN LEAD VEHICLE AND ADD TO ACTOR LIST AND PLATOON

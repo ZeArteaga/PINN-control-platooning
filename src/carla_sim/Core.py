@@ -221,9 +221,6 @@ class Platoon:
 				#state = np.array([d, fv.speed, fv.u]) #* verify correct state order (NOT FEATURE ORDER, check modelling.py)
 				v = fv.speed
 				state = np.array([d, v])
-
-				fv.acc_out_history.append(fv.acceleration) #store acceleration info
-
 				a_ref = fv.control_step(state)
 				a_refs.append(a_ref)
 				v0.append(v)		
@@ -374,6 +371,7 @@ class Vehicle:
 		#added:
 		self.u = 0
 		self.acc_out_history = []
+		self.v_history=[]
 		self.imu_acc = carla.Vector3D(0, 0, 0)
 		self.imu_gyro = carla.Vector3D(0, 0, 0)
 
@@ -397,14 +395,13 @@ class Vehicle:
 		"""store the latest IMU accelerometer data."""
 		self.imu_acc = data.accelerometer
 		self.imu_gyro = data.gyroscope
-		#!DEBUG:
-		#print(data.accelerometer, data.gyroscope)
 
 	def attach_sensor(self, sensor_name: str, sensor: carla.Sensor):
 		self.sensors[sensor_name] = sensor 
 		if sensor_name == 'imu':
 			sensor.listen(self._imu_callback)
 
+		print
 	def set_autopilot(self, is_autopilot, tm_port):
 		"""Turn on Carla autopilot.
 
@@ -430,24 +427,42 @@ class Vehicle:
 		return np.sqrt(v.x**2 + v.y**2 + v.z**2)
 
 	@property
-	def acceleration(self):
-		""" '''Returns the signed longitudinal acceleration from the IMU sensor in m/s².
-		Assuming vehicle CoM placement, should be aligned with x-axis
-		'''
-		#Raw acceleration from the IMU
-		raw_acc = self.imu_acc.x
+	def acceleration(self) -> float:
+		""" Returns the signed longitudinal acceleration from the IMU sensor in m/s².
+		Assuming vehicle CoM placement, should be aligned with x-axis """
 
-        #Get the vehicle's current transform.
-		transform = self.get_transform()
-        
-		inverse_transform = transform.rotation.get_inverse_transform() #!doesn't exist
-		g_in_world_frame = carla.Vector3D(0, 0, 9.81)
-		g_in_local_frame = inverse_transform.transform_vector(g_in_world_frame)
+		f_b = self.imu_acc
+		f_b = np.array([[f_b.x], [f_b.y], [f_b.z]], dtype=float)
+		imu = self.sensors['imu']
+		T_wb = np.array(imu.get_transform().get_matrix())
+		R_wb = T_wb[:3,:3]
+		R_bw = R_wb.T
+		
+		g_w = np.array([[0.0], [0.0], [-9.81]])
+		g_b = R_bw @ g_w
+		
+		#remove gravity effect from raw measurement
+		a_b = f_b + g_b #a_b = f_b + g_b
 
-		acc_local = raw_acc - g_in_local_frame
-        
-        # true longitudinal acceleration.
-		return acc_local.x """
+		#project acceleration on to forward vector (cause imu frame is changing with cars pose)
+		fwd_w = self.get_transform().get_forward_vector() # CARLA vector (x,y,z) in world coords
+		fwd_w = np.array([[fwd_w.x], [fwd_w.y], [fwd_w.z]], dtype=float) 
+		fwd_b = R_bw @ fwd_w
+		fwd_b = fwd_b/np.linalg.norm(fwd_b)
+
+		a_b_long = float(fwd_b.T @ a_b)
+
+		#!DEBUG:
+		print("f_b:", f_b.flatten())
+		print("g_b:", g_b.flatten())
+		print("a_b (gravity removed IMU):", a_b.flatten())
+		print("a_b_get (.get_acceleration)", self._carla_vehicle.get_acceleration()) 
+		if len(self.v_history)>2:
+			a_num = (self.v_history[-1] - self.v_history[-2]) / 0.1
+			print("a_b_num: (manual calculation):", a_num)
+		print("fwd_b:", fwd_b.flatten())
+		print("longitudinal:", a_b_long)
+		return a_b_long
 	
 	@property
 	def heading(self):
@@ -479,10 +494,15 @@ class Vehicle:
 		return gap
 
 	def control_step(self, state: np.ndarray):
-		"""For a follower vehicle, this method applies one control step."""
+		"""For a follower vehicle, this method applies one control step,
+		  returning an long acceleration reference"""
 
 		#delta_u = self.controller.make_step(state).item()
 		#self.u += delta_u * self.control_dt
+
+		self.acc_out_history.append(self.acceleration) #store info
+		self.v_history.append(self.speed)
+
 		self.u = self.controller.make_step(state).item()
 		mass = float(self.get_physics_control().mass)
 		a_ref = self.u/mass
