@@ -12,11 +12,12 @@ It can also make use of the global route planner to follow a specifed route
 import carla
 from shapely.geometry import Polygon
 
-from agents.navigation.local_planner import LocalPlanner, RoadOption
-from agents.navigation.global_route_planner import GlobalRoutePlanner
-from agents.tools.misc import (get_speed, is_within_distance,
-                               get_trafficlight_trigger_location,
-                               compute_distance)
+from .local_planner import LocalPlanner, RoadOption
+from .global_route_planner import GlobalRoutePlanner
+from ..tools.misc import (
+    get_speed, is_within_distance,
+    get_trafficlight_trigger_location, compute_distance
+)
 
 
 class BasicAgent(object):
