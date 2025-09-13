@@ -198,18 +198,23 @@ class Platoon:
 		for vehicle in self.follower_vehicles:
 			vehicle.controller.compute_target_speed(vehicle.index)
 
+	def update_kinematics_all(self, dt: float):
+		"""for all platoon members, calls update_kinematics:
+		  'Calculates and stores newest speed and acceleration'
+
+		  Args:
+			dt - needed for numerical acceleration calculation
+			"""
+		for v in self:
+			v.update_kinematics(dt)
+
 	#*changed
-	def compute_high_control(self, control_dt):
-		"""Run one step of MPC on each vehicle using their own controllers"""
+	def compute_high_control(self):
+		"""Run one step of MPC on each follower vehicle using their own controllers"""
+		if len(self.follower_vehicles) == 0:
+			return
 		
-		# run step on the lead vehicle
-		#TODO: control leader vehicle on some trajectory, for now autopilot
-		""" if not self.lead_vehicle.autopilot:
-			try:
-				...
-			except Exception as e:
-				warnings.warn(f"{e}, lead vehicle") """
-		fv : Vehicle
+		fv: Vehicle
 		a_refs = []
 		v0 = []
 		for i, fv in enumerate(self.follower_vehicles):
@@ -221,21 +226,24 @@ class Platoon:
 				#state = np.array([d, fv.speed, fv.u]) #* verify correct state order (NOT FEATURE ORDER, check modelling.py)
 				v = fv.speed
 				state = np.array([d, v])
+				fv.log_control_sample()
 				a_ref = fv.control_step(state)
 				a_refs.append(a_ref)
 				v0.append(v)		
 			except Exception as e:
 				warnings.warn(f"FV{i}: {e}")
-
+				
 		self.a_refs = np.array(a_refs)
 		self.v0 = np.array(v0)*3.6
 		self.v_refs = self.v0 #set to true velocity before integration 
 
 	def apply_low_control(self, dt):
+		if len(self.follower_vehicles) == 0:
+			return
 		self.v_refs += self.a_refs*dt*3.6 #*integrate considering a_refs constant for the rest of control interval (in km/h)
 		for idx, fv in enumerate(self.follower_vehicles):
 			#!DEBUG
-			print(f"MPC acceleration = {self.a_refs[idx]}\n",  f"Target speed = {self.v_refs[idx]}")
+			print(f"MPC target acc = {self.a_refs[idx]}\n",  f"Target speed = {self.v_refs[idx]}")
 			control = fv.run_pid_step(self.v_refs[idx], debug=True)
 			fv.apply_control(control)
 
@@ -368,10 +376,14 @@ class Vehicle:
 		self.sensors = {}
 		self.pid = None #low level controller
 		self._autopilot = False
-		#added:
+		self.tm_port = None
+		
 		self.u = 0
+		self.acc = 0
+		self.v = None
 		self.acc_out_history = []
 		self.v_history=[]
+
 		self.imu_acc = carla.Vector3D(0, 0, 0)
 		self.imu_gyro = carla.Vector3D(0, 0, 0)
 
@@ -379,14 +391,13 @@ class Vehicle:
 		return self.index < other.index
 
 	def __str__(self):
-		return f"Follower vehicle {self.index}"
+		return f"Platoon vehicle {self.index}"
 
 	def __getattr__(self, attr):
 		"""Pass on attribute and method calls to the underlying carla.Vehicle instance."""
 		return getattr(self._carla_vehicle, attr)
 
 	def attach_controller(self, controller: MPC, pid: PIDLongitudinalController):
-		"""Attach a controller (e.g. FollowerController, LeadNavigator)."""
 		self.controller = controller
 		self.control_dt = controller.settings.t_step
 		self.pid = pid
@@ -401,7 +412,6 @@ class Vehicle:
 		if sensor_name == 'imu':
 			sensor.listen(self._imu_callback)
 
-		print
 	def set_autopilot(self, is_autopilot, tm_port):
 		"""Turn on Carla autopilot.
 
@@ -409,61 +419,68 @@ class Vehicle:
 			is_autopilot: True or False for turning autopilot on or off, resp.
 			tm_port: the Carla Traffic Manager port
 		"""
+
+		self.tm_port = tm_port
 		if isinstance(is_autopilot, bool):
 			self._autopilot = is_autopilot
 			self._carla_vehicle.set_autopilot(is_autopilot, tm_port)
 		else:
 			raise TypeError("Autopilot must be set to True or False")
 
+	def attach_agent(self, agent):
+		'''Disable autopilot first before calling this method,
+		leaving naviagation to a custom provided agent'''
+		self.agent = agent
+		self.controller = None
+		self.pid = None
+
+	def get_agent(self):
+		'''Returns None if no agent was attached.'''
+		return self.agent
+
 	@property
 	def autopilot(self):
 		"""True if the vehicle is on autopilot, False otherwise."""
 		return self._autopilot
 
-	@property
-	def speed(self):
-		"""Norm of velocity in m/s."""
+	def update_kinematics(self, dt):
+		"""Calculates and stores newest speed and acceleration
+		Args:
+			dt - needed for numerical acceleration calculation"""
+		
+		new_v = self._calc_speed()
+		if self.v == None:
+			pass
+		else:
+			new_acc = self._calc_acceleration(new_v, dt)
+			self.acc = new_acc
+		self.v = new_v
+		return self.v, self.acc
+
+	def _calc_speed(self):
 		v = self._carla_vehicle.get_velocity()
 		return np.sqrt(v.x**2 + v.y**2 + v.z**2)
 
+	def _calc_acceleration(self, new_speed, dt) -> float:
+		acc = (new_speed - self.v) / dt
+		return acc
+
 	@property
-	def acceleration(self) -> float:
-		""" Returns the signed longitudinal acceleration from the IMU sensor in m/s².
-		Assuming vehicle CoM placement, should be aligned with x-axis """
-
-		f_b = self.imu_acc
-		f_b = np.array([[f_b.x], [f_b.y], [f_b.z]], dtype=float)
-		imu = self.sensors['imu']
-		T_wb = np.array(imu.get_transform().get_matrix())
-		R_wb = T_wb[:3,:3]
-		R_bw = R_wb.T
-		
-		g_w = np.array([[0.0], [0.0], [-9.81]])
-		g_b = R_bw @ g_w
-		
-		#remove gravity effect from raw measurement
-		a_b = f_b + g_b #a_b = f_b + g_b
-
-		#project acceleration on to forward vector (cause imu frame is changing with cars pose)
-		fwd_w = self.get_transform().get_forward_vector() # CARLA vector (x,y,z) in world coords
-		fwd_w = np.array([[fwd_w.x], [fwd_w.y], [fwd_w.z]], dtype=float) 
-		fwd_b = R_bw @ fwd_w
-		fwd_b = fwd_b/np.linalg.norm(fwd_b)
-
-		a_b_long = float(fwd_b.T @ a_b)
-
-		#!DEBUG:
-		print("f_b:", f_b.flatten())
-		print("g_b:", g_b.flatten())
-		print("a_b (gravity removed IMU):", a_b.flatten())
-		print("a_b_get (.get_acceleration)", self._carla_vehicle.get_acceleration()) 
-		if len(self.v_history)>2:
-			a_num = (self.v_history[-1] - self.v_history[-2]) / 0.1
-			print("a_b_num: (manual calculation):", a_num)
-		print("fwd_b:", fwd_b.flatten())
-		print("longitudinal:", a_b_long)
-		return a_b_long
+	def speed(self):
+		'''Returns latest measurement of velocity norm (m/s)'''
+		return self.v
+	@property
+	def acceleration(self):
+		'''Returns latest measurement of acceleration (m/s^2)'''
+		return self.acc
 	
+	def log_control_sample(self):
+		"""Store latest measurements for synced logging"""
+		#!DEBUG:
+		print(f"{self}: v={self.v*3.6:.3f} km/h, a={self.acc:.3f} m/s^2")
+		self.v_history.append(self.v)
+		self.acc_out_history.append(self.acc)
+
 	@property
 	def heading(self):
 		"""The angle in which the vehicle is headed in Carla's coordinate system."""
@@ -496,12 +513,11 @@ class Vehicle:
 	def control_step(self, state: np.ndarray):
 		"""For a follower vehicle, this method applies one control step,
 		  returning an long acceleration reference"""
-
+		print(self)
+		if self.controller is None:
+			raise ValueError(f"[Vehicle {self.index}] Attach an MPC controller to enable high-level control.")
 		#delta_u = self.controller.make_step(state).item()
 		#self.u += delta_u * self.control_dt
-
-		self.acc_out_history.append(self.acceleration) #store info
-		self.v_history.append(self.speed)
 
 		self.u = self.controller.make_step(state).item()
 		mass = float(self.get_physics_control().mass)
@@ -509,6 +525,9 @@ class Vehicle:
 		return a_ref
 	
 	def run_pid_step(self, v_ref: float, debug: bool) -> carla.VehicleControl:
+		if self.pid is None:
+			raise ValueError(f"[Vehicle {self.index}] Attach a PID to enable low-level control.")
+		
 		throttle_brake = self.pid.run_step(v_ref, debug)
 		control = carla.VehicleControl()
 		if throttle_brake >= 0:
@@ -553,5 +572,7 @@ def fn_get_prec_state(platoon: Platoon, follower: Vehicle):
 
     #*V2V: Get acc and speed of preceding vehicle. Speed and gap will be integrated inside the controller (TVPs)
 	v_prec = prec.speed
+	if v_prec is None: v_prec = 0.0
 	a_prec = prec.acceleration
+	if a_prec is None: a_prec = 0.0
 	return np.array([v_prec, a_prec])

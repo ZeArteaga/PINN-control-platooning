@@ -11,12 +11,15 @@ from do_mpc.model import Model
 from do_mpc.data import save_results, Data
 
 from .Core import *
+from .leader_agent import create_leader_agent
 from mpc.controller import setupDMPC
 from mpc.modelling import SecondOrderPINNmodel
 from mpc.utils import from_mpc_data_to_dict
 
+from .agents.navigation.basic_agent import BasicAgent
+
 #*This script assumes an already active server with a picked town: 
-#* ./config.py --map Town05
+#* python PythonAPI/examples/config.py --map Town05
 #* then in carla root run ./CarlaUE4.sh (optionally: --quality -low-quality)
 
 def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
@@ -42,8 +45,8 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
                           large_map=False, dt=sim_dt, synchronous=True, render=render)
         print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 
-        spect = sim.get_spectator()
         world = sim.get_world()
+        map = sim.get_map()
 
         tm = sim.get_trafficmanager(port=8000)
         tm_port = tm.get_port()
@@ -52,25 +55,25 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 
         #*PICK VEHICLE
         vehicle_bp_lib = sim.get_vehicle_blueprints()
-        imu_bp = sim.get_sensor_blueprints().find('sensor.other.imu')
-        for attr in imu_bp:
-            print(attr.id, "=>", imu_bp.get_attribute(attr.id))
-        lv_bp = vehicle_bp_lib.find('vehicle.mini.cooper_s_2021')
+        #imu_bp = sim.get_sensor_blueprints().find('sensor.other.imu')
+        lv_bp = vehicle_bp_lib.find('vehicle.mini.cooper_s_2021') 
         
-        #*SPAWN LEAD VEHICLE AND ADD TO ACTOR LIST AND PLATOON
+        #*SPAWN LEAD VEHICLE
         spawn_points = sim.get_map().get_spawn_points()
         if not spawn_points:
             print("Could not retrieve spawn points from map!")
             return
-        
+
         lv_sp = spawn_points[1]
+        lv_dest = carla.Location(100, lv_sp.location.y)
         platoon = Platoon(sim)
-        lv: Vehicle = platoon.add_lead_vehicle(lv_bp, lv_sp)
-        #*add leader sensor 
-        imu_lv = world.spawn_actor(imu_bp, carla.Transform(), attach_to=lv._carla_vehicle) #at center of mass (ideal)
-        lv.attach_sensor('imu', imu_lv) #add sensor to custom vehicle class    
-        actor_list.append(imu_lv) #for later cleanup
+        lv: Vehicle = platoon.add_lead_vehicle(blueprint=lv_bp, spawn_point=lv_sp)
+        sim.tick() #!without this line, agent doesnt work
+        lv, lv_agent = create_leader_agent(lv, destination=lv_dest, map=map, target_speed=50, ignore_hazards=True)
+        if lv is None:
+            raise RuntimeError("Failed to spawn lead vehicle")
         print(f"Spawned LV: {lv.type_id} (id: {lv.id}) at {lv_sp.location}")
+        print(f"Set LV Destination to: ", lv_dest)
         sim.tick()
 
         #* SPAWN FOLLOWERS
@@ -78,10 +81,10 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             followers = platoon.get_follower_list()
             fv: Vehicle = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
                                                 else followers[-1].transform_ahead(-10, force_straight=True)))
-            #*add follower sensors
+            """ *add follower sensors
             imu = world.spawn_actor(imu_bp, carla.Transform(), attach_to=fv._carla_vehicle)
             fv.attach_sensor('imu', imu)
-            actor_list.append(imu) 
+            actor_list.append(imu)  """
             
             #*Setup controllers
             fv_mass = fv.get_physics_control().mass
@@ -103,25 +106,34 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         for _ in range(0, int(5/sim_dt)):
                 sim.tick() #tick 5 seconds until the spawned vehicles stabilize
         
-        lv.set_autopilot(True, tm_port) #TODO: Modify default autopilot behavior
         i:int = 0
         if t_end != np.inf: 
             step_end = int(t_end/sim_dt)
         else:
             step_end = np.inf
 
-        control_dt = mpc.settings.t_step
+        control_dt = mpc_config['t_step']
         control_rate = int(control_dt/sim_dt)
         while i<=step_end:
             print(f"[t={sim_dt*i}]\n")
-            if i % control_rate == 0:
-                platoon.compute_high_control(control_dt)
+
+            platoon.update_kinematics_all(sim_dt) #update measurements mainly acc, only read below...
+
+            if not lv_agent.done(): #leader also updated every tick
+                lv.apply_control(lv_agent.run_step())
+            else:
+                print("LV has reached destination!")
+                break #end simulation after agent reaches destination
+
+            if i % control_rate == 0: #...here
+                lv.log_control_sample()
+                platoon.compute_high_control()
+
             platoon.apply_low_control(sim_dt)
             sim.update_spectator(platoon)
             sim.tick()
             i += 1
 
-        sim.release_synchronous()
 
     except KeyboardInterrupt:
         print("\nSimulation interrupted by user (Ctrl+C).")
@@ -150,6 +162,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
 
         print("Cleaning up...")
         if 'sim' in locals():
+            sim.release_synchronous()
             world = sim.get_world()
             if world:
             # Restore original settings (disable sync mode)
@@ -187,7 +200,7 @@ if __name__ == '__main__':
     parser.add_argument("--a-limit", type=float, nargs=2, default=[-11, 7], help="MPC constraint (ref. acc): [a_min, a_max]")
     parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
     parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")
-    parser.add_argument("--filt-cuttoff", type=float, default=0.6, help="Defines filter cutoff/strength (0<>1) for V2V acceleration data.")
+    parser.add_argument("--filt-strength", type=float, default=0, help="Defines filter strength (cutoff), from 0 to 1, for V2V acceleration data.")
 
     
     args = parser.parse_args()
@@ -212,7 +225,7 @@ if __name__ == '__main__':
         'Qu': [args.Qu],
         'P': args.P,
         'R': args.R,
-        'alpha': args.filt_cuttoff
+        'alpha': args.filt_strength
         #*input (acc) constraints added inside main 
     }
 
