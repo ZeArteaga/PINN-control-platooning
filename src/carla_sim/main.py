@@ -1,5 +1,6 @@
-import argparse
-import random
+import hydra
+from omegaconf import DictConfig, OmegaConf
+OmegaConf.register_new_resolver("eval", lambda expr: eval(expr)) #allows eval in config file
 import pickle
 import time 
 import numpy as np
@@ -7,42 +8,33 @@ import os
 import carla
 from .agents.navigation.controller import PIDLongitudinalController
 
-from do_mpc.model import Model
-from do_mpc.data import save_results, Data
-
 from .Core import *
 from .leader_agent import create_leader_agent
 from mpc.controller import setupDMPC
 from mpc.modelling import SecondOrderPINNmodel
 from mpc.utils import from_mpc_data_to_dict
 
-from .agents.navigation.basic_agent import BasicAgent
-
-#*This script assumes an already active server with a picked town: 
-#* python PythonAPI/examples/config.py --map Town05
+#*This script assumes an already active server: 
 #* then in carla root run ./CarlaUE4.sh (optionally: --quality -low-quality)
 
-def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
-         fn_get_prec_state, acc_cons: list, sim_dt:float=0.01, t_end:float=np.inf, 
-          host='localhost', port=2000, render:bool=True):
-    """
-    Args:
-            n_followers: number of platoon following vehicles to add (not counting the leader)
-			sim_dt: length of a simulation time step
-            control_rate: defines the rate in steps of the controller (e.g 2 -> every 2 steps of simulation, each one sim_dt time
-			t_end: Defaults to np.inf to run indefinetly
-			host: Carla server host
-			port: Carla server port
-			render: Turns rendering on (True) or off (False)
-		"""
+@hydra.main(version_base=None, config_path="config", config_name="config")
+def main(cfg: DictConfig):
+    sim_cfg = cfg.scenario.SIM
+    mpc_cfg = cfg.controller.MPC
+    pid_cfg = cfg.controller.PID
+    lv_cfg = cfg.scenario.LEAD_AGENT
+    sim_dt: float = sim_cfg.sim_dt
+    t_end = sim_cfg.t_end
+    control_rate = sim_cfg.control_rate
+    control_dt = sim_dt * control_rate
     
+    SEED = 50
     actor_list = []
-    SEED = 45
 
     try:
         #*GET CLIENT, WORLD, TRAFFIC MANAGER
-        sim = Simulation(host, port,
-                          large_map=False, dt=sim_dt, synchronous=True, render=render)
+        sim = Simulation(sim_cfg.host, sim_cfg.port, world=sim_cfg.map,
+                          large_map=False, dt=sim_cfg.sim_dt, synchronous=True, render=sim_cfg.render)
         print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 
         world = sim.get_world()
@@ -56,7 +48,7 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
         #*PICK VEHICLE
         vehicle_bp_lib = sim.get_vehicle_blueprints()
         #imu_bp = sim.get_sensor_blueprints().find('sensor.other.imu')
-        lv_bp = vehicle_bp_lib.find('vehicle.mini.cooper_s_2021') 
+        lv_bp = vehicle_bp_lib.find(sim_cfg.vehicle_bp) 
         
         #*SPAWN LEAD VEHICLE
         spawn_points = sim.get_map().get_spawn_points()
@@ -64,23 +56,29 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             print("Could not retrieve spawn points from map!")
             return
 
-        lv_sp = spawn_points[1]
-        lv_dest = carla.Location(100, lv_sp.location.y)
+        lv_sp = spawn_points[lv_cfg.spawn_point]
+        locs = [carla.Location(*coords) for coords in lv_cfg.path]
+
         platoon = Platoon(sim)
         lv: Vehicle = platoon.add_lead_vehicle(blueprint=lv_bp, spawn_point=lv_sp)
         sim.tick() #!without this line, agent doesnt work
-        lv, lv_agent = create_leader_agent(lv, destination=lv_dest, map=map, target_speed=50, ignore_hazards=True)
+        lv, lv_agent = create_leader_agent(lv, locations=locs, map=map, 
+                                           target_speed=lv_cfg.target_speed,
+                                             ignore_hazards=lv_cfg.ignore_hazards)
         if lv is None:
             raise RuntimeError("Failed to spawn lead vehicle")
-        print(f"Spawned LV: {lv.type_id} (id: {lv.id}) at {lv_sp.location}")
-        print(f"Set LV Destination to: ", lv_dest)
+        print(f"Set LV Destination to: ", locs[-1])
         sim.tick()
 
         #* SPAWN FOLLOWERS
-        for i in range(0, n_followers):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(script_dir, mpc_cfg.pinn_path)
+        pinn_model = SecondOrderPINNmodel(model_path, mpc_cfg.policy, scalerX_path=mpc_cfg.scalerX_path,
+                                          scalerY_path=mpc_cfg.scalerY_path)
+        for i in range(0, sim_cfg.n_followers):
             followers = platoon.get_follower_list()
-            fv: Vehicle = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-10, force_straight=True) if i == 0
-                                                else followers[-1].transform_ahead(-10, force_straight=True)))
+            fv: Vehicle = platoon.add_follower_vehicle(lv_bp, (lv.transform_ahead(-sim_cfg.ini_gap, force_straight=True) if i == 0
+                                                else followers[-1].transform_ahead(-sim_cfg.ini_gap, force_straight=True)))
             """ *add follower sensors
             imu = world.spawn_actor(imu_bp, carla.Transform(), attach_to=fv._carla_vehicle)
             fv.attach_sensor('imu', imu)
@@ -88,32 +86,33 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             
             #*Setup controllers
             fv_mass = fv.get_physics_control().mass
-            opt_params["u_max"] = acc_cons[1]*fv_mass
-            opt_params["u_min"] = acc_cons[0]*fv_mass
-            mpc = setupDMPC(mpc_model, mpc_config, opt_params, fn_get_prec_state, platoon, fv)
+            mpc_opt_params: dict = OmegaConf.to_container(mpc_cfg.opt_params, resolve=True)
+            mpc_settings: dict = OmegaConf.to_container(mpc_cfg.settings, resolve=True)
+            mpc_opt_params["u_min"] = mpc_cfg.opt_params.cons_acc[0]*fv_mass
+            mpc_opt_params["u_max"] = mpc_cfg.opt_params.cons_acc[1]*fv_mass
+            mpc = setupDMPC(pinn_model, mpc_settings, mpc_opt_params,
+                             fn_get_prec_state, platoon, fv)
+            
             print(f"\n FV{i} controller settings:", mpc.settings)
             mpc.set_initial_guess()
             pid = PIDLongitudinalController(fv, dt=sim_dt,
-                                             K_P=8, K_I=0.6, K_D=0.5)
+                                             K_P=pid_cfg.Kp, K_I=pid_cfg.Ki, K_D=pid_cfg.Kd)
             fv.attach_controller(mpc, pid)
             
             print(f"Spawned FV: {fv.type_id} (id: {fv.id})")
             sim.tick()
             sim.tick()
-
         #*SIMULATING
         print("Running simulation loop...")
         for _ in range(0, int(5/sim_dt)):
                 sim.tick() #tick 5 seconds until the spawned vehicles stabilize
         
         i:int = 0
-        if t_end != np.inf: 
-            step_end = int(t_end/sim_dt)
-        else:
+        if t_end is None:
             step_end = np.inf
+        else:
+            step_end = int(t_end/sim_dt)
 
-        control_dt = mpc_config['t_step']
-        control_rate = int(control_dt/sim_dt)
         while i<=step_end:
             print(f"[t={sim_dt*i}]\n")
 
@@ -165,7 +164,6 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             sim.release_synchronous()
             world = sim.get_world()
             if world:
-            # Restore original settings (disable sync mode)
                 print("Restoring original world settings.")
                 world.apply_settings(sim.get_original_settings())
         if 'platoon' in locals() and len(platoon) > 0:
@@ -173,84 +171,10 @@ def main(n_followers: int, mpc_model: Model, opt_params, mpc_config,
             print(f"Destroying platoon with {len(platoon)} vehicles.")
         if actor_list:
             print(f"Destroying {len(actor_list)} actors.")
-            sim.apply_batch([carla.command.DestroyActor(x) for x in actor_list])
-            # A small delay to ensure actors are destroyed before script exits
+            sim.apply_batch([carla.command.DestroyActor(x.id) for x in actor_list])
             time.sleep(0.5) 
         print("Cleanup finished.")
         return 0
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("n_followers", type=int, help="Number of followers to add behind the platoon leader")
-    parser.add_argument("--sim-dt", type=float, default=0.01, help="Simulation time step")
-    parser.add_argument("--initial-gap")
-    parser.add_argument("--t-end", type=float, default=np.inf, help="Simulation end time")
-    parser.add_argument("--host", type=str, default='localhost', help="Carla server host")
-    parser.add_argument("--port", type=int, default=2000, help="Carla server port")
-    parser.add_argument("--no-render", action="store_false", help="Enable rendering")
-    
-    parser.add_argument("--control-rate", type=int, default=10, help="Control rate (steps)")
-    parser.add_argument("--n-horizon", type=int, default=15, help="MPC: Prediction horizon length (steps)")
-    parser.add_argument("--Q", type=float, nargs=2, default=[3e4, 5e-1], help="MPC: Q matrix diagonal. Usage: Q[0,0] -> spacing error, " \
-    "Q[1,1] -> relative velocity error") #5e0
-    parser.add_argument("--Qu", type=float, nargs=1, default=1e-3, help="MPC: Qu value. Penalizes input acceleration magnitude. " \
-    "Q[1,1] -> relative velocity error")
-    parser.add_argument("--P", type=float, default=0, help="MPC: P weight (meyer term). Terminal error.")
-    parser.add_argument("--R", type=float, default=5e-4, help="MPC: R weight (r-term). Penalizes input acceleration differences.")
-    parser.add_argument("--a-limit", type=float, nargs=2, default=[-11, 7], help="MPC constraint (ref. acc): [a_min, a_max]")
-    parser.add_argument("--d_min", type=float, default=2, help="Model params: Distance to preeceding vehicle when stopped (min).")
-    parser.add_argument("--h", type=float, default=1, help="Model params: Time gap policy (seconds).")
-    parser.add_argument("--filt-strength", type=float, default=0, help="Defines filter strength (cutoff), from 0 to 1, for V2V acceleration data.")
-
-    
-    args = parser.parse_args()
-
-    model_params = {'h': args.h,
-                    'd_min': args.d_min}
-    
-    mpc_config = {
-            'n_horizon': args.n_horizon,
-            't_step': args.control_rate * args.sim_dt,
-            'n_robust': 0, #not using: for scenario based mpc -> see mpc.set_uncertainty_values()
-            'store_full_solution': True,
-            'collocation_deg': 2, #default 2nd-degree polynomial 
-            #to approximate the state trajectories
-            'collocation_ni': 1, #default
-            'nlpsol_opts': {'ipopt.linear_solver': 'MA27',
-                            'ipopt.print_level':0, 'print_time':0}
-            }
-    
-    opt_params = {
-        'Q': [args.Q[0], args.Q[1]],
-        'Qu': [args.Qu],
-        'P': args.P,
-        'R': args.R,
-        'alpha': args.filt_strength
-        #*input (acc) constraints added inside main 
-    }
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
-    pinn_model_path = os.path.join(script_dir, "../../models/onnx/" \
-    "pinn_FC_noWindow_udds_hwycol_fullsplit_alpha0.25_features3.onnx")
-    results_path = os.path.join(script_dir, "/results/")
-
-    # Building platoon...
-    #same model for every vehicle (homogeneous platoon)
-    mpc_model = SecondOrderPINNmodel(pinn_model_path, model_params,
-                                     scalerX_path=None,
-                                     scalerY_path=None)
-
-    main(
-        n_followers=args.n_followers,
-        mpc_config=mpc_config,
-        opt_params=opt_params,
-        mpc_model=mpc_model,
-        sim_dt=args.sim_dt,
-        t_end=args.t_end,
-        host=args.host,
-        port=args.port,
-        render=args.no_render,
-        fn_get_prec_state=fn_get_prec_state,
-        acc_cons = args.a_limit
-    )
+if __name__ == "__main__":
+    main()

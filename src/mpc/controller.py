@@ -18,6 +18,7 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
     R = opt_params['R']
     #W = np.diag(Q+Qu) 
     W = np.diag(Q)
+    P = np.diag(P)
     lterm = error_vec.T @ W @ error_vec  #*LAGRANGE/ERROR PENALTY
     mterm = terminal_vec.T @ P @ terminal_vec  #*TERMINAL COST 
     mpc.set_objective(lterm=lterm, mterm=mterm) #, mterm=mterm)
@@ -51,7 +52,6 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
         v_pred = v_prec
         for k in range(mpc.settings.n_horizon+1):
             t_pred = t_now + k * dt
-    
             tvp_template['_tvp', k, 't'] = t_pred
             tvp_template['_tvp', k, 'v_prec'] = v_pred
             v_pred += a_prec*dt
