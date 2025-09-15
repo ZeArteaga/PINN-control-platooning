@@ -35,16 +35,22 @@ def plot_follower_results(data, follower_id):
 
     # 3. Acceleration (if available)
     if 'u' in u_keys:
-        ax[2].plot(time, data['u']['u'], label='Reference input force (u)', color='C6')
+        ax[2].plot(time, data['u']['u'], label='Input reference($u$)', color='C6')
     #if 'delta_u' in u_keys:
         #ax[2].plot(time, data['u']['delta_u'], label='Control variable (du/dt)', color='C7')
     if 'a_out' in data.keys():
         ax_acc = ax[2].twinx()
         print(data['a_out'])
-        ax_acc.plot(time, data['a_out'], label='Output acceleration', color='C7')
+        ax_acc.plot(time, data['a_out'], label='Output', color='C7')
     ax_acc.set_ylabel('Acceleration (ms²)')
     ax[2].set_ylabel('Force (N)')
-    ax[2].legend()
+
+    h1, l1 = ax[2].get_legend_handles_labels()
+    if ax_acc:
+        h2, l2 = ax_acc.get_legend_handles_labels()
+        ax[2].legend(h1 + h2, l1 + l2)
+    else:
+        ax[2].legend()
 
     plt.tight_layout()
     fig.supxlabel('Time (s)')
