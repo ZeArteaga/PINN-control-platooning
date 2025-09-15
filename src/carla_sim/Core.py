@@ -10,7 +10,7 @@ from .agents.navigation.controller import PIDLongitudinalController
 
 class Simulation(carla.Client):
 	"""Top level simulation class that handles the connection to Carla and executes steps of the simulation."""
-	def __init__(self, host='localhost', port=2000, world=None, large_map=True, render=True, synchronous=True, dt=0.01,
+	def __init__(self, host='localhost', port=2000, world='Town10_opt', large_map=True, render=True, synchronous=True, dt=0.01,
 				active_distance=2000):
 		"""Initialise.
 
@@ -28,7 +28,7 @@ class Simulation(carla.Client):
 		"""
 		super().__init__(host, port)
 		self.set_timeout(10)
-		if world is None: #dont change world 
+		if world is None or 'Town10_opt': #dont change world 
 			self.world = super().get_world()
 		else:  
 			self.world = self.load_world(world)

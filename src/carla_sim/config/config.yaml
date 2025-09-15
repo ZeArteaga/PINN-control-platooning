@@ -1,0 +1,7 @@
+defaults:
+  - scenario: scenario1
+  - controller: default
+  - _self_
+
+control_dt: ${eval:'${scenario.SIM.sim_dt} * ${scenario.SIM.control_rate}'}
+

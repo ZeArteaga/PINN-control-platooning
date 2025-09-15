@@ -1,0 +1,17 @@
+SIM:
+  host: 10.147.17.223
+  map: Town10_opt
+  port: 2000
+  render: True
+  sim_dt: 0.01
+  control_rate: 10
+  t_end:
+  vehicle_bp: vehicle.mini.cooper_s_2021
+  n_followers: 3
+  ini_gap: 10
+
+LEAD_AGENT:
+  target_speed: 50
+  spawn_point: 1 #index, starts at 0
+  path: [[-20, 27.963758], [20, 27.963758], [100, 27.963758]]
+  ignore_hazards: True
