@@ -19,6 +19,7 @@ def _set_model_common_params(model, const_params: dict):
     model.set_variable('_tvp', 't', shape=(1, 1)) # PINN input feature
     #model.set_variable('_tvp', 'x_prec', shape=(1, 1))
     model.set_variable('_tvp', 'v_prec', shape=(1, 1))
+    model.set_variable('_tvp', 'a_prec', shape=(1, 1))
     
     return model
 

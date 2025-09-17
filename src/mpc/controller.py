@@ -53,6 +53,7 @@ def setupDMPC(model: Model, config: dict, opt_params: dict, get_prec_state, plat
         for k in range(mpc.settings.n_horizon+1):
             t_pred = t_now + k * dt
             tvp_template['_tvp', k, 't'] = t_pred
+            tvp_template['_tvp', k, 'a_prec'] = a_prec
             tvp_template['_tvp', k, 'v_prec'] = v_pred
             v_pred += a_prec*dt
         return tvp_template

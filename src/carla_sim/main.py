@@ -1,18 +1,19 @@
 import hydra
 from omegaconf import DictConfig, OmegaConf
 OmegaConf.register_new_resolver("eval", lambda expr: eval(expr)) #allows eval in config file
-import pickle
 import time 
 import numpy as np
 import os
 import carla
-from .agents.navigation.controller import PIDLongitudinalController
+from .agents.navigation.controller import PIDLongitudinalController, PIDLateralController
 
-from .Core import *
+from .Core import Simulation, fn_get_prec_state
+from .vehicle import Vehicle
+from .platoon import Platoon
 from .leader_agent import create_leader_agent
 from mpc.controller import setupDMPC
 from mpc.modelling import SecondOrderPINNmodel
-from mpc.utils import from_mpc_data_to_dict
+from .saving import save_follower_data
 
 #*This script assumes an already active server: 
 #* then in carla root run ./CarlaUE4.sh (optionally: --quality -low-quality)
@@ -21,12 +22,13 @@ from mpc.utils import from_mpc_data_to_dict
 def main(cfg: DictConfig):
     sim_cfg = cfg.scenario.SIM
     mpc_cfg = cfg.controller.MPC
-    pid_cfg = cfg.controller.PID
+    pid_long_cfg = cfg.controller.PID_long
+    pid_lat_cfg = cfg.controller.PID_lat
     lv_cfg = cfg.scenario.LEAD_AGENT
-    sim_dt: float = sim_cfg.sim_dt
+    sim_dt = sim_cfg.sim_dt
     t_end = sim_cfg.t_end
-    control_rate = sim_cfg.control_rate
-    control_dt = sim_dt * control_rate
+    control_dt = sim_cfg.control_dt
+    control_rate = cfg.control_rate
     
     SEED = 50
     actor_list = []
@@ -58,11 +60,16 @@ def main(cfg: DictConfig):
 
         lv_sp = spawn_points[lv_cfg.spawn_point]
         locs = [carla.Location(*coords) for coords in lv_cfg.path]
+        if lv_cfg.destination and isinstance(lv_cfg.destination, list):
+            destination = carla.Location(*lv_cfg.destination)
+        else:
+            destination = None
 
         platoon = Platoon(sim)
         lv: Vehicle = platoon.add_lead_vehicle(blueprint=lv_bp, spawn_point=lv_sp)
         sim.tick() #!without this line, agent doesnt work
         lv, lv_agent = create_leader_agent(lv, locations=locs, map=map, 
+                                           destination=destination,
                                            target_speed=lv_cfg.target_speed,
                                              ignore_hazards=lv_cfg.ignore_hazards)
         if lv is None:
@@ -95,9 +102,11 @@ def main(cfg: DictConfig):
             
             print(f"\n FV{i} controller settings:", mpc.settings)
             mpc.set_initial_guess()
-            pid = PIDLongitudinalController(fv, dt=sim_dt,
-                                             K_P=pid_cfg.Kp, K_I=pid_cfg.Ki, K_D=pid_cfg.Kd)
-            fv.attach_controller(mpc, pid)
+            pid_long = PIDLongitudinalController(fv, dt=sim_dt,
+                                             K_P=pid_long_cfg.Kp, K_I=pid_long_cfg.Ki, K_D=pid_long_cfg.Kd)
+            pid_lat = PIDLateralController(fv, dt=sim_dt,
+                                             K_P=pid_lat_cfg.Kp, K_I=pid_lat_cfg.Ki, K_D=pid_lat_cfg.Kd)
+            fv.attach_controller(mpc, pid_long, pid_lat)
             
             print(f"Spawned FV: {fv.type_id} (id: {fv.id})")
             sim.tick()
@@ -116,23 +125,23 @@ def main(cfg: DictConfig):
         while i<=step_end:
             print(f"[t={sim_dt*i}]\n")
 
-            platoon.update_kinematics_all(sim_dt) #update measurements mainly acc, only read below...
+            platoon.update_kinematics_all(sim_dt) #update sensor measurements
 
-            if not lv_agent.done(): #leader also updated every tick
-                lv.apply_control(lv_agent.run_step())
+            if not lv_agent.done():
+                lv.apply_control(lv_agent.run_step()) #leader also controlled every tick
             else:
                 print("LV has reached destination!")
-                break #end simulation after agent reaches destination
+                break
+            
+            if i % control_rate == 0: 
+                platoon.compute_high_control() #MPC runs every control rate
 
-            if i % control_rate == 0: #...here
-                lv.log_control_sample()
-                platoon.compute_high_control()
+            platoon.apply_low_control(sim_dt, debug=True) #long ppid (from mpc ref) and lat pid run with higher freq
+            platoon.log_data_all()
 
-            platoon.apply_low_control(sim_dt)
             sim.update_spectator(platoon)
             sim.tick()
             i += 1
-
 
     except KeyboardInterrupt:
         print("\nSimulation interrupted by user (Ctrl+C).")
@@ -143,21 +152,7 @@ def main(cfg: DictConfig):
         
         #*Save data
         if 'platoon' in locals() and len(platoon) > 0:
-            results_dir = os.path.join(os.path.dirname(__file__), 'results/')
-            follower: Vehicle
-            for i, follower in enumerate(platoon.get_follower_list()):
-                path = os.path.join(results_dir, f"follower_{i}.pkl")
-                #add time manually so that do_mpc plotting works
-                n_points = len(follower.controller.data['_x', 'v'])
-                time_arr = (np.arange(n_points) * control_dt).reshape(-1, 1)
-                #mpc_dict = follower.controller.data.export() #! not working correctly
-                mpc_dict = {}
-                mpc_dict['_time'] = time_arr #add time entry
-                mpc_dict = from_mpc_data_to_dict(mpc_dict, follower.controller, ['aux', 'tvp', 'x', 'u'])
-                mpc_dict['a_out'] = np.array(follower.acc_out_history).reshape(-1, 1) #store resulting output acceleration
-                with open(path, 'wb') as f:
-                    pickle.dump(mpc_dict, f)
-                print(f"Saved data for follower {i} to {results_dir}")
+            save_follower_data(sim_dt, control_dt, platoon)
 
         print("Cleaning up...")
         if 'sim' in locals():
