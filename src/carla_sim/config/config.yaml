@@ -3,5 +3,5 @@ defaults:
   - controller: default
   - _self_
 
-control_dt: ${eval:'${scenario.SIM.sim_dt} * ${scenario.SIM.control_rate}'}
+control_rate: ${eval:'int(${scenario.SIM.control_dt} / ${scenario.SIM.sim_dt})'}
 

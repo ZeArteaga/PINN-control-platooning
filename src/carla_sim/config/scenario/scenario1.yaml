@@ -4,7 +4,7 @@ SIM:
   port: 2000
   render: True
   sim_dt: 0.01
-  control_rate: 10
+  control_dt: 0.1
   t_end:
   vehicle_bp: vehicle.mini.cooper_s_2021
   n_followers: 3
@@ -14,4 +14,5 @@ LEAD_AGENT:
   target_speed: 50
   spawn_point: 1 #index, starts at 0
   path: [[-20, 27.963758], [20, 27.963758], [100, 27.963758]]
+  destination: [10, 60] #if set, agent will ignore path above
   ignore_hazards: True

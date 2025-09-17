@@ -13,14 +13,14 @@ def create_leader_agent(lv, target_speed, map, locations: list | None = None,
         lv_agent.ignore_vehicles(True)
         lv_agent.ignore_traffic_lights(True)
         lv_agent.ignore_stop_signs(True)
-    if not locations:
-        if destination:
+    if destination:
             start_wp = map.get_waypoint(lv.get_location())
             end_wp   = map.get_waypoint(destination)
             plan = lv_agent.trace_route(start_wp, end_wp) #creates waypoint list
     else:
-        plan = build_custom_plan(map, locations)
-        lv_agent.set_global_plan(plan, stop_waypoint_creation=True, clean_queue=True)
+        if locations:
+            plan = build_custom_plan(map, locations)
+            lv_agent.set_global_plan(plan, stop_waypoint_creation=True, clean_queue=True)
     lv.attach_agent(lv_agent) #for lv.get_agent() access
     return lv, lv_agent
 

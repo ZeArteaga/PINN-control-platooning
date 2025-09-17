@@ -4,7 +4,7 @@ MPC:
     d_min: 2
   
   settings:
-    t_step: ${control_dt}
+    t_step: ${scenario.SIM.control_dt}
     n_horizon: 15
     n_robust: 0 #not using: for scenario based mpc -> see mpc.set_uncertainty_values()
     store_full_solution: True
@@ -29,7 +29,12 @@ MPC:
   scalerY_path: #same
   results_path: "/results/"
 
-PID:
+PID_long:
   Kp: 8
   Ki: 0.6
-  Kd: 0.5 
+  Kd: 0.5
+
+PID_lat:
+  Kp: 1.95
+  Ki: 0.05
+  Kd: 0.2  
