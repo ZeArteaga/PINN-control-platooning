@@ -167,10 +167,11 @@ class Platoon:
         '''Logs spacing data inside the platoon and each platoon member dynamics.
         Use this after the kinematics update and control steps.
         '''
-        for i, fv in enumerate(self.follower_vehicles):
-            self.gap_hist[str(fv.id)]["index"].append(fv.index)
-            self.gap_hist[str(fv.id)]["gap"].append(self.gaps[i])
-            fv.log_data()
+        for i, v in enumerate(self):
+            if i> 0:
+                self.gap_hist[str(v.id)]["index"].append(v.index)
+                self.gap_hist[str(v.id)]["gap"].append(self.gaps[i-1])
+            v.log_data()
 
     #*changed
     def compute_high_control(self):

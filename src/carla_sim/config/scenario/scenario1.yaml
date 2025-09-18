@@ -14,5 +14,5 @@ LEAD_AGENT:
   target_speed: 50
   spawn_point: 1 #index, starts at 0
   path: [[-20, 27.963758], [20, 27.963758], [100, 27.963758]]
-  destination: #if set, agent will ignore path above. For random curved path: [10, 60].
+  destination: #if set, agent will ignore path above. e.g random curved path: [10, 60].
   ignore_hazards: True

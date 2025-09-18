@@ -114,7 +114,7 @@ def plot_platoon_results(all_data):
         ax[0].plot(t, np.array(leader['v']) * 3.6, label='Leader', color='black')
 
     # Followers' velocities
-    for item in all_data:
+    for item in all_data[1:]:
         idx = item['index']
         sim = item['data']['sim']
         if 'v' in sim:
@@ -122,7 +122,7 @@ def plot_platoon_results(all_data):
     ax[0].legend()
 
     # --- Plot 2: Spacing Error (gap - d_ref) ---
-    ax[1].set_title('Follower Spacing Error (Actual Gap - Target Gap)')
+    ax[1].set_title('Spacing Error (Actual Gap - Target Gap)')
     ax[1].set_ylabel('Spacing Error (m)')
     ax[1].axhline(0, color='black', linestyle='--', linewidth=1)
 
@@ -130,13 +130,19 @@ def plot_platoon_results(all_data):
         idx = item['index']
         sim = item['data']['sim']
         mpc = item['data']['mpc']
-        t = np.asarray(sim['time']).flatten()
+        sim_t = np.asarray(sim.get('time', []), float).reshape(-1)
+        mpc_t = np.asarray(mpc.get('time', []), float).reshape(-1)
 
-        if 'gap' in sim and 'aux' in mpc and 'd_ref' in mpc['aux']:
-            dref = _zoh(np.asarray(mpc['time']).flatten(), mpc['aux']['d_ref'])(t).flatten()
-            gap = np.asarray(sim['gap'], float).flatten()
-            err = gap - dref
-            ax[1].plot(t, err, label=f'Follower {idx}')
+
+        d = sim.get('gap') or sim.get('d')
+        if d is None or sim_t.size == 0:
+            continue
+        d = np.asarray(d, float).reshape(-1)
+        if 'aux' in mpc.keys():
+            if "d_ref" in mpc['aux'].keys():
+                dref = _zoh(mpc_t, mpc['aux']['d_ref'])(sim_t).reshape(-1)
+                err = d - dref
+                ax[1].plot(sim_t, err, label=f'Follower {idx}')
     ax[1].legend()
 
     plt.tight_layout()
