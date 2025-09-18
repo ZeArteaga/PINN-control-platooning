@@ -1,0 +1,40 @@
+MPC:  
+  policy:
+    h: 1
+    d_min: 2
+  
+  settings:
+    t_step: ${scenario.SIM.control_dt}
+    n_horizon: 15
+    n_robust: 0 #not using: for scenario based mpc -> see mpc.set_uncertainty_values()
+    store_full_solution: True
+    collocation_deg: 2 #default 2nd-degree polynomial to approximate the state trajectories
+    collocation_ni: 1 #default
+    nlpsol_opts:
+      ipopt.linear_solver: MA27
+      ipopt.print_level: 0
+      print_time: 0
+
+  opt_params:
+    'Q': [3.0e4, 5.0e-1]
+    'Qu': #not using
+    'P': [0, 0, 0]
+    'R': 5.0e-4
+    'alpha': 0 #defines acc filter strength
+    'cons_acc': [-11, 7] #later converted to input force (u) bounds 
+
+  #appended to root (carla_sim folder) during runtime
+  pinn_path: ../../models/onnx/pinn_FC_noWindow_udds_hwycol_fullsplit_alpha0.25_features3.onnx 
+  scalerX_path: #if pinn has external scalers 
+  scalerY_path: #same
+  results_path: "/results/"
+
+PID_long:
+  Kp: 8
+  Ki: 0.6
+  Kd: 0.5
+
+PID_lat:
+  Kp: 1.95
+  Ki: 0.05
+  Kd: 0.2  
