@@ -115,7 +115,7 @@ def plot_platoon_results(all_data):
 
     # Followers' velocities
     for item in all_data[1:]:
-        idx = item['index']
+        idx = item['index'] - 1
         sim = item['data']['sim']
         if 'v' in sim:
             ax[0].plot(t, np.asarray(sim['v'], float).flatten() * 3.6, label=f'Follower {idx}')
@@ -142,7 +142,7 @@ def plot_platoon_results(all_data):
             if "d_ref" in mpc['aux'].keys():
                 dref = _zoh(mpc_t, mpc['aux']['d_ref'])(sim_t).reshape(-1)
                 err = d - dref
-                ax[1].plot(sim_t, err, label=f'Follower {idx}')
+                ax[1].plot(sim_t, err, label=f'Follower {idx-1}')
     ax[1].legend()
 
     plt.tight_layout()
@@ -172,7 +172,7 @@ def main():
     #individual results
     for item in all_vehicle_data[1:]:
         print(f"Plotting individual results for platoon vehicle {item['index']}")
-        plot_follower_results(item['data'], item['index'])
+        plot_follower_results(item['data'], item['index']-1)
 
     #platoon results
     if all_vehicle_data:
