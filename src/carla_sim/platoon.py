@@ -6,7 +6,7 @@ from .vehicle import Vehicle
 
 class Platoon:
     """Platoon represents a simulated vehicle platoon. It contains a lead vehicle and a number of follower vehicles."""
-    def __init__(self, simulation):
+    def __init__(self, simulation, wp_settings):
         """Initialise.
 
         Args:
@@ -27,9 +27,8 @@ class Platoon:
         
         self.lead_waypoints = deque()  # stores waypoints of the lead vehicle
         #waypoint settings
-        self.wp_settings = {"base_min_dist": 3.0, # m; from this distance we assume follower passed wp
-                            "dist_ratio": 0.5, # s; sppeed scaling
-                            "lookahead": 10.0}  # m; select target along path within a max of 
+        self.wp_settings = wp_settings
+        
         self.path_indexes = {} #keep track of each follower -> lead_waypoints
     
     def __getitem__(self, item):

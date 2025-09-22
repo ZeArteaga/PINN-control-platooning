@@ -1,6 +1,6 @@
 SIM:
   host: 10.147.17.223
-  map: Town10_opt
+  map: Town05
   port: 2000
   render: True
   sim_dt: 0.01
@@ -12,7 +12,10 @@ SIM:
 
 LEAD_AGENT:
   target_speed: 50
-  spawn_point: 1 #index, starts at 0
-  path: [[-20, 27.963758], [20, 27.963758], [100, 27.963758]]
+  spawn_point: 188 #sp index -> Location(x=-217.588593, y=6.672848, z=0.300000) 
+  path: [[-100, 6.672848], [-50, 6.672848], [0, 6.672848], [50, 6.672848], [140, 5.319232]]
   destination: #if set, agent will ignore path above. e.g random curved path: [10, 60].
-  ignore_hazards: True
+  hazards:
+    ignore_vehicles: False
+    ignore_traffic_lights: False
+    ignore_stop_signs: False

@@ -1,11 +1,18 @@
 import os 
+import datetime
 import pickle
 import numpy as np
 from mpc.utils import from_mpc_data_to_dict
 from .Core import Vehicle, Platoon
 
 def save_follower_data(sim_dt: float, control_dt: float, platoon: Platoon):
-    results_dir = os.path.join(os.path.dirname(__file__), 'results/')
+    date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    results_dir = os.path.join(
+        os.path.dirname(__file__),
+        f'results/{date_str}/'
+    )
+    os.makedirs(results_dir, exist_ok=True)
+
     vehicle: Vehicle
     for i, vehicle in enumerate(platoon):
         path = os.path.join(results_dir, f"vehicle_{i}.pkl")

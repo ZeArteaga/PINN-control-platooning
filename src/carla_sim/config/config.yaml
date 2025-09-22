@@ -1,5 +1,5 @@
 defaults:
-  - scenario: scenario1
+  - scenario: town5_straight
   - controller: default
   - _self_
 

@@ -38,3 +38,8 @@ PID_lat:
   Kp: 1.95
   Ki: 0.05
   Kd: 0.2  
+
+Path_settings:
+  base_min_dist: 3.0 # m; from this distance we assume follower passed wp
+  dist_ratio: 0.5 # s; sppeed scaling
+  lookahead: 5.0  # m; select target along path within a max of 
