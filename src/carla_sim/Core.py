@@ -25,11 +25,9 @@ class Simulation(carla.Client):
 		"""
 		super().__init__(host, port)
 		self.set_timeout(10)
-		if world is None or 'Town10_opt': #dont change world 
-			self.world = super().get_world()
-		else:  
+		self.world = super().get_world()
+		if world!=str(self.world.get_map()): #only change if map is different from input
 			self.world = self.load_world(world)
-		
 		#*APPLY SETTINGS
 		self.original_settings = self.world.get_settings()
 		_settings = self.world.get_settings()
