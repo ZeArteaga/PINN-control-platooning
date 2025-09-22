@@ -16,11 +16,11 @@ MPC:
       print_time: 0
 
   opt_params:
-    'Q': [3.0e4, 5.0e-1]
+    'Q': [3.0e4, 1e2] #[3.0e4, 5.0e-1]
     'Qu': #not using
     'P': [0, 0, 0]
     'R': 5.0e-4
-    'alpha': 0 #defines acc filter strength
+    'alpha': 0.2 #defines acc filter strength
     'cons_acc': [-11, 7] #later converted to input force (u) bounds 
 
   #appended to root (carla_sim folder) during runtime
