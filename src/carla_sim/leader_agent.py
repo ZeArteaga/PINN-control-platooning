@@ -3,16 +3,15 @@ from .Core import Vehicle
 from .agents.navigation.behavior_agent import BehaviorAgent, BasicAgent
 from .agents.navigation.local_planner import RoadOption, _compute_connection
 
-def create_leader_agent(lv, target_speed, map, locations: list | None = None,
-                         destination: None | carla.Location = None, ignore_hazards = True) \
+def create_leader_agent(lv, target_speed, map, hazard_settings, locations: list | None = None,
+                         destination: None | carla.Location = None) \
  -> tuple[Vehicle, BasicAgent]:
     lv_agent = BasicAgent(lv, target_speed=target_speed)
     #lv_agent = BehaviorAgent(lv, "aggressive")~
-    if ignore_hazards:
-        lv_agent.follow_speed_limits(False)
-        lv_agent.ignore_vehicles(True)
-        lv_agent.ignore_traffic_lights(True)
-        lv_agent.ignore_stop_signs(True)
+    lv_agent.follow_speed_limits(False)
+    lv_agent.ignore_vehicles(hazard_settings["ignore_vehicles"])
+    lv_agent.ignore_traffic_lights(hazard_settings["ignore_traffic_lights"])
+    lv_agent.ignore_stop_signs(hazard_settings["ignore_stop_signs"])
     if destination:
             start_wp = map.get_waypoint(lv.get_location())
             end_wp   = map.get_waypoint(destination)

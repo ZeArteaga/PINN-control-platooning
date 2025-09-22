@@ -59,22 +59,25 @@ def main(cfg: DictConfig):
             return
 
         lv_sp = spawn_points[lv_cfg.spawn_point]
-        locs = [carla.Location(*coords) for coords in lv_cfg.path]
-        if lv_cfg.destination and isinstance(lv_cfg.destination, list):
+        if lv_cfg.path:
+            locs = [carla.Location(*coords) for coords in lv_cfg.path]
+        else:
+            locs = None
+        if lv_cfg.destination:
             destination = carla.Location(*lv_cfg.destination)
         else:
             destination = None
 
-        platoon = Platoon(sim)
+        platoon = Platoon(sim, cfg.controller.Path_settings)
         lv: Vehicle = platoon.add_lead_vehicle(blueprint=lv_bp, spawn_point=lv_sp)
         sim.tick() #!without this line, agent doesnt work
         lv, lv_agent = create_leader_agent(lv, locations=locs, map=map, 
                                            destination=destination,
                                            target_speed=lv_cfg.target_speed,
-                                             ignore_hazards=lv_cfg.ignore_hazards)
+                                           hazard_settings=lv_cfg.hazards)
         if lv is None:
             raise RuntimeError("Failed to spawn lead vehicle")
-        print(f"Set LV Destination to: ", locs[-1])
+        print("LV spawned and Agent created.")
         sim.tick()
 
         #* SPAWN FOLLOWERS
