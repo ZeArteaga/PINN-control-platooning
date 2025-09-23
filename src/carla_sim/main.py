@@ -35,7 +35,7 @@ def main(cfg: DictConfig):
 
     try:
         #*GET CLIENT, WORLD, TRAFFIC MANAGER
-        sim = Simulation(sim_cfg.host, sim_cfg.port, world=sim_cfg.map,
+        sim = Simulation(cfg.host, cfg.port, world=sim_cfg.map,
                           large_map=False, dt=sim_cfg.sim_dt, synchronous=True, render=sim_cfg.render)
         print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 

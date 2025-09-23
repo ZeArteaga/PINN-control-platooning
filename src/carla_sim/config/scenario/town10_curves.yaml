@@ -1,7 +1,5 @@
 SIM:
-  host: 10.147.17.223
-  map: Town10_opt
-  port: 2000
+  map: Town10HD_opt
   render: True
   sim_dt: 0.01
   control_dt: 0.1
@@ -15,4 +13,7 @@ LEAD_AGENT:
   spawn_point: 1 #index, starts at 0
   path:
   destination: [10, 60]
-  ignore_hazards: False
+  hazards:
+    ignore_vehicles: False
+    ignore_traffic_lights: False
+    ignore_stop_signs: False

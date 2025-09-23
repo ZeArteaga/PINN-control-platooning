@@ -1,7 +1,10 @@
 defaults:
-  - scenario: town5_straight
+  - scenario: town10_curves
   - controller: default
   - _self_
+
+host: localhost
+port: 2000 
 
 control_rate: ${eval:'int(${scenario.SIM.control_dt} / ${scenario.SIM.sim_dt})'}
 

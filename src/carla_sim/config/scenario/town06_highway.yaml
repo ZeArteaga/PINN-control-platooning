@@ -1,7 +1,5 @@
 SIM:
-  host: 10.147.17.223
   map: Town06
-  port: 2000
   render: True
   sim_dt: 0.01
   control_dt: 0.1
@@ -16,3 +14,7 @@ LEAD_AGENT:
   path:
   destination: [10, 60]
   ignore_hazards: False
+  hazards:
+    ignore_vehicles: False
+    ignore_traffic_lights: False
+    ignore_stop_signs: False

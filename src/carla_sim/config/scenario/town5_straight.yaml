@@ -1,7 +1,5 @@
 SIM:
-  host: 10.147.17.223
   map: Town05
-  port: 2000
   render: True
   sim_dt: 0.01
   control_dt: 0.1
