@@ -16,7 +16,7 @@ from mpc.modelling import SecondOrderPINNmodel
 from .saving import save_follower_data
 
 #*This script assumes an already active server: 
-#* then in carla root run ./CarlaUE4.sh (optionally: --quality -low-quality)
+#*in carla root run ./CarlaUE4.sh (optionally: ./CarlaUE4.sh -quality-level=Low)
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def main(cfg: DictConfig):

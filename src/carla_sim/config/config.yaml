@@ -3,7 +3,7 @@ defaults:
   - controller: default
   - _self_
 
-host: localhost
+host: "10.147.17.223"
 port: 2000 
 
 control_rate: ${eval:'int(${scenario.SIM.control_dt} / ${scenario.SIM.sim_dt})'}

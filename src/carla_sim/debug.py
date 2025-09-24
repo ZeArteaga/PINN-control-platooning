@@ -2,7 +2,7 @@ from .Core import Simulation
 import carla
 import time
 
-sim = Simulation("10.147.17.223", 2000, world="Town05",
+sim = Simulation("10.147.17.223", 2000, world="Town10HD_opt",
                           large_map=False, dt=0.1, synchronous=False, render=True)
 print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 
@@ -10,8 +10,9 @@ world = sim.get_world()
 map = sim.get_map()
 sps = map.get_spawn_points()
 for i, sp in enumerate(sps):
-    world.debug.draw_string(location = sp.location, text="SP: " + str(i),life_time = 60, draw_shadow = True)
-print(sps[188].location, sps[300].location)
+    world.debug.draw_string(location = sp.location, text="SP: " + str(i),life_time = 9999999, draw_shadow=True)
+for ind in [1, 59, 76, 32, 23, 70, 129, 28, 79, 86, 2, 120, 126, 89]:
+    print([sps[ind].location.x, sps[ind].location.y])
 try:
     while True:
         time.sleep(1)

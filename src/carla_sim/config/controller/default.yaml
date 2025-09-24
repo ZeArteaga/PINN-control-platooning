@@ -41,5 +41,5 @@ PID_lat:
 
 Path_settings:
   base_min_dist: 3.0 # m; from this distance we assume follower passed wp
-  dist_ratio: 0.5 # s; sppeed scaling
-  lookahead: 5.0  # m; select target along path within a max of 
+  dist_ratio: 0.5 # s; speed scaling
+  lookahead: 1  # m; select target along path within a max of 

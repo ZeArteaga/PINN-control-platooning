@@ -11,9 +11,19 @@ SIM:
 LEAD_AGENT:
   target_speed: 50
   spawn_point: 1 #index, starts at 0
-  path:
-  destination: [10, 60]
+  path: #based on spawn points: [23, 70, 129, 28, 79, 86, 2, 120, 126, 89]
+  - [55.54227828979492, 130.46006774902344]
+  - [-18.385923385620117, 130.21006774902344]
+  - [-41.491477966308594, 111.9452896118164]
+  - [-41.66858673095703, 89.7454833984375]
+  - [-41.66887664794922, 48.905540466308594]
+  - [-66.79419708251953, 12.99838924407959]
+  - [-87.62303161621094, 12.967159271240234]
+  - [-103.21614074707031, -2.2083921432495117]
+  - [-52.13356018066406, -40.1802978515625]
+  - [-52.330810546875, -14.039613723754883]
+  destination: #if set it ignores the path
   hazards:
-    ignore_vehicles: False
-    ignore_traffic_lights: False
-    ignore_stop_signs: False
+    ignore_vehicles: True
+    ignore_traffic_lights: True
+    ignore_stop_signs: True
