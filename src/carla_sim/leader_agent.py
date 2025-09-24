@@ -1,7 +1,6 @@
 import carla
 from .Core import Vehicle
 from .agents.navigation.behavior_agent import BehaviorAgent, BasicAgent
-from .agents.navigation.local_planner import RoadOption, _compute_connection
 
 def create_leader_agent(lv, target_speed, map, hazard_settings, locations: list | None = None,
                          destination: None | carla.Location = None) \
@@ -13,18 +12,24 @@ def create_leader_agent(lv, target_speed, map, hazard_settings, locations: list 
     lv_agent.ignore_traffic_lights(hazard_settings["ignore_traffic_lights"])
     lv_agent.ignore_stop_signs(hazard_settings["ignore_stop_signs"])
     if destination:
-            start_wp = map.get_waypoint(lv.get_location())
-            end_wp   = map.get_waypoint(destination)
-            plan = lv_agent.trace_route(start_wp, end_wp) #creates waypoint list
+            lv_agent.set_destination(end_location=destination, start_location=lv.get_location(),
+                                     clean_queue=True)
     else:
         if locations:
-            plan = build_custom_plan(map, locations)
-            lv_agent.set_global_plan(plan, stop_waypoint_creation=True, clean_queue=True)
+             for i in range(len(locations)):
+                if i == 0: 
+                    lv_agent.set_destination(end_location=locations[i], start_location=lv.get_location(),
+                                             clean_queue=True) #first clean queue
+                else:
+                    lv_agent.set_destination(end_location=locations[i], start_location=locations[i-1],
+                                             clean_queue=False) #then fill up waypoint buffer further   
+
     lv.attach_agent(lv_agent) #for lv.get_agent() access
     return lv, lv_agent
-
-def build_custom_plan(map: carla.Map, locations: list[carla.Location]):
-    '''Returns plan: list[carla.waypoint, RoadOption]'''
+""" 
+def build_custom_plan(map: carla.Map, locations: list[carla.Location],):
+    ''' adapted from 
+    Returns plan: list[carla.waypoint, RoadOption]'''
     waypoints = [map.get_waypoint(loc) for loc in locations]
     plan = []
     for i in range(len(waypoints) - 1):
@@ -33,4 +38,4 @@ def build_custom_plan(map: carla.Map, locations: list[carla.Location]):
         road_option = _compute_connection(wp_current, wp_next)
         plan.append((wp_current, road_option))
     plan.append((waypoints[-1], RoadOption.STRAIGHT)) #lanefollow to destination
-    return plan
+    return plan """
