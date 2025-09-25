@@ -201,8 +201,6 @@ class Platoon:
         if len(self.follower_vehicles) == 0:
             return
         
-        self.store_leader_waypoint()
-
         self.v_refs += self.a_refs*dt*3.6 #*integrate considering a_refs constant for the rest of control interval (in km/h)
         for idx, fv in enumerate(self.follower_vehicles):
             target_wp = self._select_target_wp(fv)

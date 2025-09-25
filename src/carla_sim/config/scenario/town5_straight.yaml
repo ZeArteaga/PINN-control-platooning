@@ -1,5 +1,5 @@
 SIM:
-  map: Town05
+  map: Town05_opt
   render: True
   sim_dt: 0.01
   control_dt: 0.1
@@ -9,11 +9,11 @@ SIM:
   ini_gap: 10
 
 LEAD_AGENT:
-  type: "basic" #basic or cautious, normal, aggressive
+  type: basic #basic or cautious, normal, aggressive
   target_speed: 50 #only followed for basic agent. for Behavior types check behavior_types.py 
-  spawn_point: 188 #sp index -> Location(x=-217.588593, y=6.672848, z=0.300000) 
-  path: [[-100, 6.672848], [-50, 6.672848], [0, 6.672848], [50, 6.672848], [140, 5.319232]]
-  destination: #if set, agent will ignore path above. e.g random curved path: [10, 60].
+  spawn_point: 4 #sp index -> [-175.9413299560547, 6.477585315704346] 
+  path: 
+  destination: [136.1, 1.8] ##near 285. if set, agent will ignore path above..
   hazards:
     ignore_vehicles: False
     ignore_traffic_lights: False

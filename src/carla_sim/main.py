@@ -71,8 +71,8 @@ def main(cfg: DictConfig):
         platoon = Platoon(sim, cfg.controller.Path_settings)
         lv: Vehicle = platoon.add_lead_vehicle(blueprint=lv_bp, spawn_point=lv_sp)
         sim.tick() #!without this line, agent doesnt work
-        lv, lv_agent = create_leader_agent(lv, locations=locs, agent_type=lv_cfg.type, 
-                                           destination=destination,
+        lv, lv_agent = create_leader_agent(lv, map=map, agent_type=lv_cfg.type,
+                                            locations=locs, destination=destination,
                                            target_speed=lv_cfg.target_speed,
                                            hazard_settings=lv_cfg.hazards)
         if lv is None:
@@ -137,6 +137,7 @@ def main(cfg: DictConfig):
                 break
             
             if i % control_rate == 0: 
+                platoon.store_leader_waypoint()
                 platoon.compute_high_control() #MPC runs every control rate
 
             platoon.apply_low_control(sim_dt, debug=True) #long ppid (from mpc ref) and lat pid run with higher freq
