@@ -15,6 +15,6 @@ LEAD_AGENT:
   path: 
   destination: [136.1, 1.8] ##near 285. if set, agent will ignore path above..
   hazards:
-    ignore_vehicles: False
-    ignore_traffic_lights: False
-    ignore_stop_signs: False
+    ignore_vehicles: True
+    ignore_traffic_lights: True
+    ignore_stop_signs: True

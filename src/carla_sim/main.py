@@ -137,9 +137,9 @@ def main(cfg: DictConfig):
                 break
             
             if i % control_rate == 0: 
-                platoon.store_leader_waypoint()
                 platoon.compute_high_control() #MPC runs every control rate
-
+            
+            platoon.store_leader_waypoint()
             platoon.apply_low_control(sim_dt, debug=True) #long ppid (from mpc ref) and lat pid run with higher freq
             platoon.log_data_all()
 
