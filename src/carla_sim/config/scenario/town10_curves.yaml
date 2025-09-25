@@ -9,7 +9,8 @@ SIM:
   ini_gap: 10
 
 LEAD_AGENT:
-  target_speed: 50
+  type: "basic" #basic or cautious, normal, aggressive
+  target_speed: 50 #only followed for basic agent. for Behavior types check behavior_types.py 
   spawn_point: 1 #index, starts at 0
   path: #based on spawn points: [23, 70, 129, 28, 79, 86, 2, 120, 126, 89]
   - [55.54227828979492, 130.46006774902344]

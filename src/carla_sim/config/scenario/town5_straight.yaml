@@ -9,11 +9,12 @@ SIM:
   ini_gap: 10
 
 LEAD_AGENT:
-  target_speed: 50
+  type: "basic" #basic or cautious, normal, aggressive
+  target_speed: 50 #only followed for basic agent. for Behavior types check behavior_types.py 
   spawn_point: 188 #sp index -> Location(x=-217.588593, y=6.672848, z=0.300000) 
   path: [[-100, 6.672848], [-50, 6.672848], [0, 6.672848], [50, 6.672848], [140, 5.319232]]
   destination: #if set, agent will ignore path above. e.g random curved path: [10, 60].
   hazards:
-    ignore_vehicles: True
-    ignore_traffic_lights: True
-    ignore_stop_signs: True
+    ignore_vehicles: False
+    ignore_traffic_lights: False
+    ignore_stop_signs: False

@@ -27,7 +27,6 @@ class Simulation(carla.Client):
 		self.set_timeout(10)
 		self.world = super().get_world()
 		if not (world.lower() in self.world.get_map().name.lower()): #only change if map is different from input
-			print("TESTTTTTTTTTTTTTTTT")
 			self.world = self.load_world(world)
 		#*APPLY SETTINGS
 		self.original_settings = self.world.get_settings()

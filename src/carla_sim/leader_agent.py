@@ -2,11 +2,16 @@ import carla
 from .Core import Vehicle
 from .agents.navigation.behavior_agent import BehaviorAgent, BasicAgent
 
-def create_leader_agent(lv, target_speed, map, hazard_settings, locations: list | None = None,
+def create_leader_agent(lv, target_speed, hazard_settings, agent_type="basic", locations: list | None = None,
                          destination: None | carla.Location = None) \
  -> tuple[Vehicle, BasicAgent]:
-    lv_agent = BasicAgent(lv, target_speed=target_speed)
-    #lv_agent = BehaviorAgent(lv, "aggressive")~
+    if agent_type.lower() == "basic":
+        lv_agent = BasicAgent(lv, target_speed=target_speed)
+    else:
+        if agent_type.lower() not in ["cautious", "normal", "aggressive"]:
+            raise ValueError("Behavior Agent can only be of 'cautious', 'normal' or 'aggressive' type.")   
+        lv_agent = BehaviorAgent(lv, agent_type.lower())
+
     lv_agent.follow_speed_limits(False)
     lv_agent.ignore_vehicles(hazard_settings["ignore_vehicles"])
     lv_agent.ignore_traffic_lights(hazard_settings["ignore_traffic_lights"])

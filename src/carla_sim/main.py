@@ -16,7 +16,7 @@ from mpc.modelling import SecondOrderPINNmodel
 from .saving import save_follower_data
 
 #*This script assumes an already active server: 
-#*in carla root run ./CarlaUE4.sh (optionally: ./CarlaUE4.sh -quality-level=Low)
+#* then in carla root run ./CarlaUE4.sh (optionally: ./CarlaUE4.sh -quality-level=Low)
 
 @hydra.main(version_base=None, config_path="config", config_name="config")
 def main(cfg: DictConfig):
@@ -71,7 +71,7 @@ def main(cfg: DictConfig):
         platoon = Platoon(sim, cfg.controller.Path_settings)
         lv: Vehicle = platoon.add_lead_vehicle(blueprint=lv_bp, spawn_point=lv_sp)
         sim.tick() #!without this line, agent doesnt work
-        lv, lv_agent = create_leader_agent(lv, locations=locs, map=map, 
+        lv, lv_agent = create_leader_agent(lv, locations=locs, agent_type=lv_cfg.type, 
                                            destination=destination,
                                            target_speed=lv_cfg.target_speed,
                                            hazard_settings=lv_cfg.hazards)
