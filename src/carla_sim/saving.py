@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 from mpc.utils import from_mpc_data_to_dict
 from .Core import Vehicle, Platoon
+import shutil
 
 def save_follower_data(sim_dt: float, control_dt: float, platoon: Platoon):
     date_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -42,3 +43,9 @@ def save_follower_data(sim_dt: float, control_dt: float, platoon: Platoon):
         with open(path, 'wb') as f:
             pickle.dump(output, f)
         print(f"Saved data for vehicle {i} to {results_dir}")
+
+    for filename in os.listdir(results_dir):
+        src = os.path.join(results_dir, filename)
+        if os.path.isfile(src):
+            shutil.copy(src, results_dir+"../")
+    print(f"Overwritten files to results root.")
