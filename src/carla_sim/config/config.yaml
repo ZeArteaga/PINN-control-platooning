@@ -1,5 +1,5 @@
 defaults:
-  - scenario: town5_straight
+  - scenario: town10_curves
   - controller: default
   - _self_
 

@@ -1,0 +1,3 @@
+- scenario.LEAD_AGENT.type=cautious
+- scenario.SIM.sim_dt=0.05
+- scenario.SIM.n_followers=0

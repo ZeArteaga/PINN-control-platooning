@@ -1,0 +1,3 @@
+- scenario.SIM.render=False
+- controller.MPC.policy.h=2
+- scenario.LEAD_AGENT.type=aggressive

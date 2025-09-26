@@ -2,7 +2,7 @@ from .Core import Simulation
 import carla
 import time
 
-sim = Simulation("10.147.17.223", 2000, world="Town05_opt",
+sim = Simulation("10.147.17.223", 2000, world="Town10HD_opt",
                           large_map=False, dt=0.1, synchronous=False, render=True)
 print(f"Successfully connected to Carla. Current map: {sim.get_map().name}")
 

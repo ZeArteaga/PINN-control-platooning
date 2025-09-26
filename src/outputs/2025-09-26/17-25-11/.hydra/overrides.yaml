@@ -1,0 +1,2 @@
+- controller.MPC.opt_params.alpha=0.6
+- scenario.LEAD_AGENT.type=aggressive

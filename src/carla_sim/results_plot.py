@@ -24,7 +24,7 @@ def _zoh(mpc_t, y):
         y = y.reshape(-1, 1)
     return interp1d(
         np.asarray(mpc_t).flatten(), y, kind='zero', axis=0,
-        bounds_error=False
+        bounds_error=False, fill_value='extrapolate'
     )
 
 def plot_follower_results(data, follower_id):
@@ -149,7 +149,6 @@ def plot_platoon_results(all_data):
     fig.supxlabel('Time (s)')
     plt.show()
 
-
 def main():
     results_dir = os.path.join(os.path.dirname(__file__), 'results/')
     if not os.path.exists(results_dir):
@@ -178,7 +177,6 @@ def main():
     if all_vehicle_data:
         print("\nPlotting collective platoon results...")
         plot_platoon_results(all_vehicle_data)
-
 
 if __name__ == '__main__':
     main()
