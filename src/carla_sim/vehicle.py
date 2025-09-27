@@ -55,8 +55,9 @@ class Vehicle:
         self.acc_ref = 0
         self.v = None
         self.v_ref = 0
+        self.curr_loc = None
 
-        self.history = {"u": [], "acc": [], "acc_ref": [], "v": []}
+        self.history = {"u": [], "acc": [], "acc_ref": [], "v": [], "xy": []}
 
         self.imu_acc = carla.Vector3D(0, 0, 0)
         self.imu_gyro = carla.Vector3D(0, 0, 0)
@@ -127,6 +128,8 @@ class Vehicle:
         Args:
             dt - needed for numerical acceleration calculation"""
         
+        self.curr_loc = self.get_location()
+        
         new_v = self._calc_speed()
         if self.v == None:
             pass
@@ -134,6 +137,7 @@ class Vehicle:
             new_acc = self._calc_acceleration(new_v, dt)
             self.acc = new_acc
         self.v = new_v
+
         return self.v, self.acc
 
     def _calc_speed(self):
@@ -270,3 +274,4 @@ class Vehicle:
         self.history["acc"].append(self.acc)
         self.history["u"].append(self.u)
         self.history["v"].append(self.v)
+        self.history["xy"].append((self.curr_loc.x, self.curr_loc.y))

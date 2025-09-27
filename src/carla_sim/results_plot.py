@@ -37,7 +37,7 @@ def plot_follower_results(data, follower_id):
     tvp_keys = mpc_data['tvp'].keys()
 
     fig, ax = plt.subplots(3, sharex=True, figsize=(16, 9))
-    fig.suptitle(f'Results for Follower Vehicle {follower_id}')
+    #fig.suptitle(f'Results for Follower Vehicle {follower_id}')
 
     # 1) Spacing/Gap
     if 'd_ref' in aux_keys:
@@ -50,7 +50,7 @@ def plot_follower_results(data, follower_id):
         e_zoh = _zoh(mpc_time, mpc_data['aux']['e'])(sim_time)
         ax[0].plot(sim_time, e_zoh, label='Spacing error (MPC)', color=COL['d_err'])
     ax[0].set_ylabel('Gap (m)')
-    ax[0].legend()
+    ax[0].legend(loc="lower left")
 
     # 2) Velocity
     sim_v = sim_data.get('v')
@@ -60,14 +60,14 @@ def plot_follower_results(data, follower_id):
         v_prec_zoh = _zoh(mpc_time, mpc_data['tvp']['v_prec'])(sim_time)
         ax[1].plot(sim_time, v_prec_zoh*3.6, label="Preceding vehicle's speed (MPC)", color=COL['v_prec'])
     ax[1].set_ylabel('Velocity (km/h)')
-    ax[1].legend()
+    ax[1].legend(loc="lower left")
 
     # 3) Input (u) and accelerations on twinx
     # Left axis: force
     sim_u = sim_data.get('u')
     left_color = COL['u']
     if sim_u is not None:
-        ax[2].plot(sim_time, np.asarray(sim_u, float), label='Input long. force $u$', color=left_color)
+        ax[2].plot(sim_time, np.asarray(sim_u, float), label='Input longitudinal force $u$', color=left_color, zorder=3)
     ax[2].set_ylabel('Force (N)', color=left_color)
     ax[2].tick_params(axis='y', colors=left_color)
     ax[2].spines['left'].set_color(left_color)
@@ -78,10 +78,10 @@ def plot_follower_results(data, follower_id):
     right_color = COL['a_out']  # prefer measured accel color for the axis
     sim_acc = sim_data.get('a_out') or sim_data.get('acc')
     if sim_acc is not None:
-        ax_r.plot(sim_time, np.asarray(sim_acc, float), label='Output acceleration', color=COL['a_out'])
+        ax_r.plot(sim_time, np.asarray(sim_acc, float), label='Output acceleration', color=COL['a_out'], zorder=1)
     sim_a_ref = sim_data.get('acc_ref')
     if sim_a_ref is not None:
-        ax_r.plot(sim_time, np.asarray(sim_a_ref, float), label='Input equiv. acceleration', color=COL['a_ref'])
+        ax_r.plot(sim_time, np.asarray(sim_a_ref, float), label='Input equiv. acceleration', color=COL['a_ref'], zorder=3)
         # If only ref is plotted, color axis with ref tone
         if sim_acc is None:
             right_color = COL['a_ref']
@@ -93,7 +93,9 @@ def plot_follower_results(data, follower_id):
     # Combined legend
     h1, l1 = ax[2].get_legend_handles_labels()
     h2, l2 = ax_r.get_legend_handles_labels()
-    ax[2].legend(h1 + h2, l1 + l2)
+    leg = ax[2].legend(h1 + h2, l1 + l2, loc="best", frameon=True, facecolor='white')
+    leg.set_zorder(100)
+    leg.set_alpha(1)
 
     plt.tight_layout()
     fig.supxlabel('Time (s)')
@@ -101,7 +103,7 @@ def plot_follower_results(data, follower_id):
 
 def plot_platoon_results(all_data):
     fig, ax = plt.subplots(2, sharex=True, figsize=(16, 9))
-    fig.suptitle('Platoon Performance')
+    #fig.suptitle('Platoon Performance')
 
     # --- Plot 1: Velocities ---
     ax[0].set_title('CAV Velocities')
@@ -113,40 +115,79 @@ def plot_platoon_results(all_data):
         t = np.asarray(leader['time']).flatten()
         ax[0].plot(t, np.array(leader['v']) * 3.6, label='Leader', color='black')
 
-    # Followers' velocities
-    for item in all_data[1:]:
-        idx = item['index'] - 1
-        sim = item['data']['sim']
-        if 'v' in sim:
-            ax[0].plot(t, np.asarray(sim['v'], float).flatten() * 3.6, label=f'Follower {idx}')
-    ax[0].legend()
+        # Followers' velocities
+        for item in all_data[1:]:
+            idx = item['index'] - 1
+            sim = item['data']['sim']
+            if 'v' in sim:
+                ax[0].plot(t, np.asarray(sim['v'], float).flatten() * 3.6, label=f'Follower {idx}')
+        ax[0].legend(loc="upper left")
 
-    # --- Plot 2: Spacing Error (gap - d_ref) ---
-    ax[1].set_title('Spacing Error (Actual Gap - Target Gap)')
-    ax[1].set_ylabel('Spacing Error (m)')
-    ax[1].axhline(0, color='black', linestyle='--', linewidth=1)
+        # --- Plot 2: Spacing Error (gap - d_ref) ---
+        ax[1].set_title('Spacing Error (Actual Gap - Target Gap)')
+        ax[1].set_ylabel('Spacing Error (m)')
+        ax[1].axhline(0, color='black', linestyle='--', linewidth=1)
 
-    for item in all_data[1:]:
-        idx = item['index']
-        sim = item['data']['sim']
-        mpc = item['data']['mpc']
-        sim_t = np.asarray(sim.get('time', []), float).reshape(-1)
-        mpc_t = np.asarray(mpc.get('time', []), float).reshape(-1)
+        for item in all_data[1:]:
+            idx = item['index']
+            sim = item['data']['sim']
+            mpc = item['data']['mpc']
+            sim_t = np.asarray(sim.get('time', []), float).reshape(-1)
+            mpc_t = np.asarray(mpc.get('time', []), float).reshape(-1)
 
 
-        d = sim.get('gap') or sim.get('d')
-        if d is None or sim_t.size == 0:
-            continue
-        d = np.asarray(d, float).reshape(-1)
-        if 'aux' in mpc.keys():
-            if "d_ref" in mpc['aux'].keys():
-                dref = _zoh(mpc_t, mpc['aux']['d_ref'])(sim_t).reshape(-1)
-                err = d - dref
-                ax[1].plot(sim_t, err, label=f'Follower {idx-1}')
-    ax[1].legend()
+            d = sim.get('gap') or sim.get('d')
+            if d is None or sim_t.size == 0:
+                continue
+            d = np.asarray(d, float).reshape(-1)
+            if 'aux' in mpc.keys():
+                if "d_ref" in mpc['aux'].keys():
+                    dref = _zoh(mpc_t, mpc['aux']['d_ref'])(sim_t).reshape(-1)
+                    err = d - dref
+                    ax[1].plot(sim_t, err, label=f'Follower {idx-1}')
+        ax[1].legend(loc="upper left")
+
+
 
     plt.tight_layout()
     fig.supxlabel('Time (s)')
+    plt.show()
+
+def plot_platoon_path(all_data):
+    """
+    Plots the XY trajectories of all vehicles in the platoon.
+    """
+    fig, ax = plt.subplots(figsize=(16, 9))
+    #ax.set_title('Platoon Trajectories')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.yaxis.set_inverted(True) #carla uses left handed coord system
+    ax.set_aspect('equal', adjustable='box') # Ensures X and Y axes are scaled the same
+    ax.grid(True)
+
+    if all_data:
+        leader_data = all_data[0]['data']['sim']
+        if 'xy' in leader_data and leader_data['xy']:
+            x_coords, y_coords = zip(*leader_data['xy'])
+            ax.plot(x_coords, y_coords, label='Leader', color='black', linewidth=2)
+            start_x, start_y = x_coords[0], y_coords[0]
+            ax.plot(start_x, start_y, '*', markersize=15, color='gold', markeredgecolor='black', label='Leader Spawning Point', zorder=5)
+            
+            # Plot Finish Marker (red 'x')
+            finish_x, finish_y = x_coords[-1], y_coords[-1]
+            ax.plot(finish_x, finish_y, 'X', markersize=12, color='red', label='Leader Destination', zorder=5)
+    #    color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    
+        for i, item in enumerate(all_data[1:]):
+            follower_idx = item.get('index', i + 1) - 1 # Get follower index (0, 1, 2...)
+            sim_data = item.get('data', {}).get('sim', {})
+            if 'xy' in sim_data and sim_data['xy']:
+                x_coords, y_coords = zip(*sim_data['xy'])
+                #color = color_cycle[i % len(color_cycle)] # Cycle through colors
+                ax.plot(x_coords, y_coords, label=f'Follower {follower_idx}')
+
+    ax.legend(loc="best")
+    plt.tight_layout()
     plt.show()
 
 def main():
@@ -177,6 +218,7 @@ def main():
     if all_vehicle_data:
         print("\nPlotting collective platoon results...")
         plot_platoon_results(all_vehicle_data)
+        plot_platoon_path(all_vehicle_data)
 
 if __name__ == '__main__':
     main()
