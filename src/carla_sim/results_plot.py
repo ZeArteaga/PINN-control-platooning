@@ -145,9 +145,9 @@ def plot_platoon_results(all_data):
                     dref = _zoh(mpc_t, mpc['aux']['d_ref'])(sim_t).reshape(-1)
                     err = d - dref
                     ax[1].plot(sim_t, err, label=f'Follower {idx-1}')
+                    print(f"Follower {idx-1} spacing error l2-norm: {np.linalg.norm(err, 2)}")
+
         ax[1].legend(loc="upper left")
-
-
 
     plt.tight_layout()
     fig.supxlabel('Time (s)')
