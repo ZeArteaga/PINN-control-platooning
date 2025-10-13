@@ -115,6 +115,10 @@ def main(cfg: DictConfig):
             sim.tick()
             sim.tick()
         #*SIMULATING
+
+        #start recording for later playback
+        sim.start_recorder("./town10_curves.log")
+
         print("Running simulation loop...")
         for _ in range(0, int(5/sim_dt)):
                 sim.tick() #tick 5 seconds until the spawned vehicles stabilize
@@ -160,6 +164,7 @@ def main(cfg: DictConfig):
 
         print("Cleaning up...")
         if 'sim' in locals():
+            sim.stop_recorder()
             sim.release_synchronous()
             world = sim.get_world()
             if world:

@@ -1,0 +1,96 @@
+scenario:
+  SIM:
+    map: Town10HD_opt
+    render: true
+    sim_dt: 0.01
+    control_dt: 0.1
+    t_end: null
+    vehicle_bp: vehicle.mini.cooper_s_2021
+    n_followers: 3
+    ini_gap: 10
+  LEAD_AGENT:
+    type: basic
+    target_speed: 50
+    spawn_point: 1
+    path:
+    - - 55.54227828979492
+      - 130.46006774902344
+    - - -18.385923385620117
+      - 130.21006774902344
+    - - -41.491477966308594
+      - 111.9452896118164
+    - - -41.66858673095703
+      - 89.7454833984375
+    - - -41.66887664794922
+      - 48.905540466308594
+    - - -45.6
+      - 32.9
+    - - -66.79419708251953
+      - 12.99838924407959
+    - - -87.62303161621094
+      - 12.967159271240234
+    - - -103.21614074707031
+      - -2.2083921432495117
+    - - -52.13356018066406
+      - -40.1802978515625
+    - - -52.330810546875
+      - -14.039613723754883
+    destination: null
+    hazards:
+      ignore_vehicles: false
+      ignore_traffic_lights: false
+      ignore_stop_signs: false
+controller:
+  MPC:
+    policy:
+      h: 1
+      d_min: 2
+    settings:
+      t_step: ${scenario.SIM.control_dt}
+      n_horizon: 15
+      n_robust: 0
+      store_full_solution: true
+      collocation_deg: 2
+      collocation_ni: 1
+      nlpsol_opts:
+        ipopt.linear_solver: MA27
+        ipopt.print_level: 0
+        print_time: 0
+    opt_params:
+      Q:
+      - 30000.0
+      - 100.0
+      Qu: null
+      P:
+      - 0
+      - 0
+      - 0
+      R: 0.0005
+      alpha: 0.2
+      cons_acc:
+      - -11
+      - 7
+    pinn_path: ../../models/onnx/pinn_FC_noWindow_udds_hwycol_fullsplit_alpha0.25_features3.onnx
+    scalerX_path: null
+    scalerY_path: null
+    results_path: /results/
+  PID_long:
+    Kp: 8
+    Ki: 0.6
+    Kd: 0.5
+  PID_lat:
+    Kp: 1.95
+    Ki: 0.05
+    Kd: 0.2
+  Path_settings:
+    base_min_dist: 3.0
+    dist_ratio: 0.5
+    lookahead: 1
+host: 10.147.17.223
+port: 2000
+replay:
+  time_factor: 1
+  camera: 0
+  t_start: 0
+  path: ./results/town10_curves.log
+control_rate: ${eval:'int(${scenario.SIM.control_dt} / ${scenario.SIM.sim_dt})'}

@@ -6,5 +6,10 @@ defaults:
 host: "10.147.17.223"
 port: 2000 
 
+replay:
+  time_factor: 1
+  follow_id: 0 #set to actor id, 0 is free roam
+  t_start: 0
+  path: "/home/josearteaga/Desktop/tese/PINN-control-platooning/src/carla_sim/results/town10_curves.log"
 control_rate: ${eval:'int(${scenario.SIM.control_dt} / ${scenario.SIM.sim_dt})'}
 
